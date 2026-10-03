@@ -16,11 +16,19 @@ class ScheduleScreen extends ConsumerWidget {
       showSnack(context, '먼저 "약 찾기"에서 약을 등록해 주세요.');
       return;
     }
+    await _openSheet(context, ref, drugs: drugs);
+  }
+
+  Future<void> _edit(BuildContext context, WidgetRef ref, ScheduleItem s) =>
+      _openSheet(context, ref, drugs: const [], existing: s);
+
+  Future<void> _openSheet(BuildContext context, WidgetRef ref,
+      {required List<UserDrug> drugs, ScheduleItem? existing}) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _AddScheduleSheet(drugs: drugs),
+      builder: (_) => _ScheduleSheet(drugs: drugs, existing: existing),
     );
     if (saved == true) {
       ref.invalidate(schedulesProvider);
@@ -59,6 +67,7 @@ class ScheduleScreen extends ConsumerWidget {
                 leading: Text(s.time, style: Theme.of(context).textTheme.titleLarge),
                 title: Text(s.itemName),
                 subtitle: Text([s.mealRelation.label, s.doseText].whereType<String>().join(' · ')),
+                onTap: () => _edit(context, ref, s), // 눌러서 수정
                 trailing: IconButton(
                   tooltip: '삭제',
                   icon: const Icon(Icons.delete_outline),
@@ -88,20 +97,31 @@ class ScheduleScreen extends ConsumerWidget {
   }
 }
 
-class _AddScheduleSheet extends ConsumerStatefulWidget {
-  const _AddScheduleSheet({required this.drugs});
+/// 복용 시간 추가/수정 시트. [existing] 이 있으면 수정 모드(약은 바꿀 수 없음).
+class _ScheduleSheet extends ConsumerStatefulWidget {
+  const _ScheduleSheet({required this.drugs, this.existing});
   final List<UserDrug> drugs;
+  final ScheduleItem? existing;
 
   @override
-  ConsumerState<_AddScheduleSheet> createState() => _AddScheduleSheetState();
+  ConsumerState<_ScheduleSheet> createState() => _ScheduleSheetState();
 }
 
-class _AddScheduleSheetState extends ConsumerState<_AddScheduleSheet> {
-  late UserDrug _drug = widget.drugs.first;
-  TimeOfDay _time = const TimeOfDay(hour: 8, minute: 30);
-  MealRelation _meal = MealRelation.after;
-  final _dose = TextEditingController(text: '1정');
+class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
+  bool get _isEdit => widget.existing != null;
+  late UserDrug? _drug = widget.drugs.isEmpty ? null : widget.drugs.first;
+  late TimeOfDay _time = _parse(widget.existing?.time) ?? const TimeOfDay(hour: 8, minute: 30);
+  late MealRelation _meal = widget.existing?.mealRelation ?? MealRelation.after;
+  late final _dose = TextEditingController(text: _isEdit ? (widget.existing!.doseText ?? '') : '1정');
   bool _saving = false;
+
+  static TimeOfDay? _parse(String? hhmm) {
+    if (hhmm == null) return null;
+    final p = hhmm.split(':');
+    if (p.length != 2) return null;
+    final h = int.tryParse(p[0]), m = int.tryParse(p[1]);
+    return (h == null || m == null) ? null : TimeOfDay(hour: h, minute: m);
+  }
 
   @override
   void dispose() {
@@ -114,13 +134,14 @@ class _AddScheduleSheetState extends ConsumerState<_AddScheduleSheet> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
+    final dose = _dose.text.trim().isEmpty ? null : _dose.text.trim();
+    final repo = ref.read(repositoryProvider);
     try {
-      await ref.read(repositoryProvider).addSchedule(
-            userDrugId: _drug.id,
-            time: _hhmm,
-            mealRelation: _meal,
-            doseText: _dose.text.trim().isEmpty ? null : _dose.text.trim(),
-          );
+      if (_isEdit) {
+        await repo.updateSchedule(widget.existing!.id, time: _hhmm, mealRelation: _meal, doseText: dose);
+      } else {
+        await repo.addSchedule(userDrugId: _drug!.id, time: _hhmm, mealRelation: _meal, doseText: dose);
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -136,17 +157,23 @@ class _AddScheduleSheetState extends ConsumerState<_AddScheduleSheet> {
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('복용 시간 추가', style: t.titleLarge),
+        Text(_isEdit ? '복용 시간 수정' : '복용 시간 추가', style: t.titleLarge),
         const SizedBox(height: 16),
-        DropdownButtonFormField<UserDrug>(
-          value: _drug,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '약'),
-          items: widget.drugs
-              .map((d) => DropdownMenuItem(value: d, child: Text(d.itemName, overflow: TextOverflow.ellipsis)))
-              .toList(),
-          onChanged: (d) => setState(() => _drug = d ?? _drug),
-        ),
+        if (_isEdit)
+          InputDecorator(
+            decoration: const InputDecoration(labelText: '약'),
+            child: Text(widget.existing!.itemName, style: const TextStyle(fontSize: 17)),
+          )
+        else
+          DropdownButtonFormField<UserDrug>(
+            value: _drug,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: '약'),
+            items: widget.drugs
+                .map((d) => DropdownMenuItem(value: d, child: Text(d.itemName, overflow: TextOverflow.ellipsis)))
+                .toList(),
+            onChanged: (d) => setState(() => _drug = d ?? _drug),
+          ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
           icon: const Icon(Icons.access_time),

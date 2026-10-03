@@ -38,6 +38,16 @@ class MockRepository implements PillRepository {
 
   String _today() => DateTime.now().toIso8601String().substring(0, 10);
 
+  /// 목업 로그인: 이메일 형식과 비밀번호 4자 이상이면 통과
+  @override
+  Future<String> login(String email, String password) async {
+    await _delay();
+    if (!email.contains('@') || password.length < 4) {
+      throw RepoException('이메일 또는 비밀번호를 확인해 주세요.', code: 'INVALID_CREDENTIALS');
+    }
+    return 'mock-token';
+  }
+
   @override
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20}) async {
     await _load();
@@ -141,6 +151,29 @@ class MockRepository implements PillRepository {
     );
     _schedules.add(s);
     return s;
+  }
+
+  @override
+  Future<ScheduleItem> updateSchedule(
+    int id, {
+    required String time,
+    required MealRelation mealRelation,
+    String? doseText,
+  }) async {
+    await _delay();
+    final i = _schedules.indexWhere((s) => s.id == id);
+    if (i < 0) throw RepoException('복용 시간을 찾을 수 없어요.', code: 'NOT_FOUND');
+    final o = _schedules[i];
+    final n = ScheduleItem(
+      id: o.id,
+      userDrugId: o.userDrugId,
+      itemName: o.itemName,
+      time: time,
+      mealRelation: mealRelation,
+      doseText: doseText,
+    );
+    _schedules[i] = n;
+    return n;
   }
 
   @override

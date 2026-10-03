@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
 import '../widgets/state_views.dart';
+import 'settings_screen.dart';
 
 /// 오늘 복용 체크 (복용 기록)
 class IntakeScreen extends ConsumerWidget {
@@ -25,7 +26,17 @@ class IntakeScreen extends ConsumerWidget {
     final value = ref.watch(intakesProvider(date));
     final t = Theme.of(context).textTheme;
     return Scaffold(
-      appBar: AppBar(title: Text('오늘 · $date')),
+      appBar: AppBar(
+        title: Text('오늘 · $date'),
+        actions: [
+          IconButton(
+            tooltip: '설정',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () =>
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(intakesProvider(date).future),
         child: AsyncBody<List<IntakeRecord>>(

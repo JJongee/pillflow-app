@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../widgets/dialogs.dart';
 import '../widgets/drug_widgets.dart';
 import '../widgets/state_views.dart';
 import 'drug_detail_screen.dart';
@@ -12,26 +13,14 @@ class MyDrugsScreen extends ConsumerWidget {
   const MyDrugsScreen({super.key});
 
   Future<void> _editMemo(BuildContext context, WidgetRef ref, UserDrug d) async {
-    final c = TextEditingController(text: d.memo ?? '');
     final memo = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('메모'),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '예: 내과 처방, 아침 식후'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('저장')),
-        ],
-      ),
+      builder: (_) => TextInputDialog(title: '메모', initial: d.memo ?? '', hint: '예: 내과 처방, 아침 식후'),
     );
-    c.dispose();
     if (memo == null) return;
     try {
       await ref.read(repositoryProvider).updateMyDrug(d.id, memo: memo.isEmpty ? null : memo);
+      if (!context.mounted) return;
       ref.invalidate(myDrugsProvider);
     } catch (e) {
       if (context.mounted) showSnack(context, e.toString());
@@ -57,6 +46,7 @@ class MyDrugsScreen extends ConsumerWidget {
     if (ok != true) return;
     try {
       await ref.read(repositoryProvider).deleteMyDrug(d.id);
+      if (!context.mounted) return;
       ref.invalidate(myDrugsProvider);
       ref.invalidate(schedulesProvider);
       ref.invalidate(intakesProvider(todayString()));

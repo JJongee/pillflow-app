@@ -30,6 +30,9 @@ class ApiRepository implements PillRepository {
     try {
       return await f();
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw RepoException('로그인이 만료됐어요. 다시 로그인해 주세요.', code: 'UNAUTHORIZED');
+      }
       final data = e.response?.data;
       if (data is Map && data['detail'] is String) {
         throw RepoException(data['detail'] as String, code: data['code'] as String?);
@@ -46,6 +49,22 @@ class ApiRepository implements PillRepository {
   }
 
   List<Map<String, dynamic>> _list(dynamic d) => (d as List).cast<Map<String, dynamic>>();
+
+  @override
+  Future<String> login(String email, String password) async {
+    try {
+      return await _call(() async {
+        final r = await _dio.post('/auth/login', data: {'email': email, 'password': password});
+        return (r.data as Map<String, dynamic>)['access_token'] as String;
+      });
+    } on RepoException catch (e) {
+      // 로그인 요청의 401은 "만료"가 아니라 "틀린 계정 정보"
+      if (e.code == 'UNAUTHORIZED') {
+        throw RepoException('이메일 또는 비밀번호를 확인해 주세요.', code: 'INVALID_CREDENTIALS');
+      }
+      rethrow;
+    }
+  }
 
   @override
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20}) => _call(() async {
@@ -104,6 +123,22 @@ class ApiRepository implements PillRepository {
       _call(() async {
         final r = await _dio.post('/me/schedules', data: {
           'user_drug_id': userDrugId,
+          'time': time,
+          'meal_relation': mealRelation.code,
+          'dose_text': doseText,
+        });
+        return ScheduleItem.fromJson(r.data as Map<String, dynamic>);
+      });
+
+  @override
+  Future<ScheduleItem> updateSchedule(
+    int id, {
+    required String time,
+    required MealRelation mealRelation,
+    String? doseText,
+  }) =>
+      _call(() async {
+        final r = await _dio.patch('/me/schedules/$id', data: {
           'time': time,
           'meal_relation': mealRelation.code,
           'dose_text': doseText,

@@ -44,7 +44,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) {
+    // 이미 등록한 약은 검색 결과에 "등록됨" 표시
+    final mine = ref.watch(myDrugsProvider).valueOrNull?.map((d) => d.itemSeq).toSet() ?? const <String>{};
+    return Scaffold(
         appBar: AppBar(title: const Text('약 찾기')),
         body: Column(children: [
           Padding(
@@ -71,11 +74,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
           ),
-          Expanded(child: _results()),
+          Expanded(child: _results(mine)),
         ]),
       );
+  }
 
-  Widget _results() {
+  Widget _results(Set<String> mine) {
     if (_future == null) {
       return const EmptyView(
         icon: Icons.medication_liquid_outlined,
@@ -111,7 +115,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               leading: DrugImage(url: d.imageUrl),
               title: Text(d.itemName),
               subtitle: Text(d.entpName ?? ''),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: mine.contains(d.itemSeq)
+                  ? const Chip(
+                      label: Text('등록됨', style: TextStyle(fontSize: 13)),
+                      visualDensity: VisualDensity.compact,
+                      avatar: Icon(Icons.check, size: 16),
+                    )
+                  : const Icon(Icons.chevron_right),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => DrugDetailScreen(itemSeq: d.itemSeq)),
               ),

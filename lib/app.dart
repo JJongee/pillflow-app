@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/config.dart';
 import 'core/theme.dart';
+import 'data/providers.dart';
 import 'screens/intake_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/my_drugs_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/search_screen.dart';
@@ -15,8 +18,17 @@ class PillFlowApp extends StatelessWidget {
         title: '필플로우',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
-        home: const HomeShell(),
+        home: const AuthGate(),
       );
+}
+
+/// 로그인 전이면 로그인 화면, 로그인 후면 홈
+class AuthGate extends ConsumerWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) =>
+      ref.watch(authTokenProvider) == null ? const LoginScreen() : const HomeShell();
 }
 
 /// 하단 탭 4개: 오늘 · 약 찾기 · 내 약 · 시간표

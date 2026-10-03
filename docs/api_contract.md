@@ -1,4 +1,4 @@
-# 필플로우 API 요청·응답 초안 (v0.1, 앱 쪽 제안)
+# 필플로우 API 요청·응답 초안 (v0.2, 앱 쪽 제안)
 
 > 작성: 고연수(앱) · 합의 대상: 주연우(서버) · 10/3 합의용 초안
 > 앱의 `lib/data/api_repository.dart`가 이 문서 그대로 구현되어 있습니다. 바뀌면 둘 다 고칩니다.
@@ -15,6 +15,18 @@
 | 빈 값 | 없는 필드는 `null` (빈 문자열 `""` 대신). CSV에서 `atpnWarnQesitm` 3,605건, `intrcQesitm` 1,456건, `itemImage` 1,990건이 비어 있음 |
 | 에러 | `{ "detail": "사람이 읽을 메시지", "code": "NOT_FOUND" }` + 적절한 HTTP 상태코드 (FastAPI 기본 `detail` 유지) |
 | 목록 | `{ "items": [...], "page": 1, "size": 20, "total": 123 }` |
+
+## 0. 인증
+
+### `POST /auth/login`
+바디: `{ "email": "demo@pillflow.app", "password": "1234" }`
+```json
+{ "access_token": "eyJhbGciOi...", "token_type": "bearer" }
+```
+- 실패 시 `401` → 앱에서 "이메일 또는 비밀번호를 확인해 주세요." 표시
+- 다른 API에서 `401` → "로그인이 만료됐어요" 표시
+- FastAPI 기본 `OAuth2PasswordRequestForm`(form 방식, `username` 필드)을 쓰면 알려주세요. 앱을 그 형식으로 맞추겠습니다.
+- 회원가입(`POST /auth/signup`)은 형식이 정해지면 추가
 
 ## 1. 약 검색 · 상세
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../widgets/dialogs.dart';
 import '../widgets/state_views.dart';
 import '../widgets/verdict_badge.dart';
 
@@ -14,37 +15,6 @@ import '../widgets/verdict_badge.dart';
 ///  - 경고에는 고시번호·고시일자·비고(조건)를 함께 표시
 class DurResultScreen extends ConsumerWidget {
   const DurResultScreen({super.key});
-
-  Future<void> _askBirthYear(BuildContext context, WidgetRef ref, int? current) async {
-    final c = TextEditingController(text: current?.toString() ?? '');
-    final y = await showDialog<int>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('태어난 해'),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          maxLength: 4,
-          decoration: const InputDecoration(hintText: '예: 1958', helperText: '나이에 따라 금기인 약을 확인할 때만 써요.'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, int.tryParse(c.text.trim())), child: const Text('저장')),
-        ],
-      ),
-    );
-    c.dispose();
-    final now = DateTime.now().year;
-    if (y == null || !context.mounted) return;
-    if (y < 1900 || y > now) {
-      if (context.mounted) showSnack(context, '태어난 해를 다시 확인해 주세요.');
-      return;
-    }
-    await ref.read(repositoryProvider).setBirthYear(y);
-    ref.invalidate(birthYearProvider);
-    ref.invalidate(durCheckProvider);
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -71,7 +41,7 @@ class DurResultScreen extends ConsumerWidget {
                   title: const Text('나이에 따른 금기는 확인하지 않았어요'),
                   subtitle: const Text('태어난 해를 입력하면 함께 확인해요.'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _askBirthYear(context, ref, birthYear),
+                  onTap: () => editBirthYear(context, ref, birthYear),
                 ),
               ),
             if (hasDanger) ...[
@@ -108,7 +78,7 @@ class DurResultScreen extends ConsumerWidget {
             ),
             if (!r.ageUnknown)
               TextButton(
-                onPressed: () => _askBirthYear(context, ref, birthYear),
+                onPressed: () => editBirthYear(context, ref, birthYear),
                 child: Text('태어난 해 변경 (${birthYear ?? '-'})'),
               ),
           ]);

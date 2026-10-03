@@ -33,6 +33,8 @@ class _DrugDetailScreenState extends ConsumerState<DrugDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final value = ref.watch(drugDetailProvider(widget.itemSeq));
+    final registered =
+        ref.watch(myDrugsProvider).valueOrNull?.any((d) => d.itemSeq == widget.itemSeq) ?? false;
     return Scaffold(
       appBar: AppBar(title: const Text('약 정보')),
       body: AsyncBody<DrugDetail>(
@@ -71,13 +73,15 @@ class _DrugDetailScreenState extends ConsumerState<DrugDetailScreen> {
           ? SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: FilledButton.icon(
-                  onPressed: _saving ? null : () => _register(value.requireValue),
-                  icon: _saving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.add),
-                  label: const Text('내 약에 등록'),
-                ),
+                child: registered
+                    ? const FilledButton.tonal(onPressed: null, child: Text('이미 등록한 약이에요'))
+                    : FilledButton.icon(
+                        onPressed: _saving ? null : () => _register(value.requireValue),
+                        icon: _saving
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.add),
+                        label: const Text('내 약에 등록'),
+                      ),
               ),
             )
           : null,

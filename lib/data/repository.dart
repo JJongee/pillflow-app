@@ -3,6 +3,9 @@ import '../models/models.dart';
 /// 화면은 이 인터페이스만 봅니다.
 /// 목업([MockRepository])과 실제 서버([ApiRepository])는 AppConfig.useMock 으로 바뀝니다.
 abstract class PillRepository {
+  // 0. 인증 — 성공하면 access token 을 돌려줍니다.
+  Future<String> login(String email, String password);
+
   // 1. 검색·상세
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20});
   Future<DrugDetail> getDrug(String itemSeq);
@@ -17,6 +20,12 @@ abstract class PillRepository {
   Future<List<ScheduleItem>> getSchedules();
   Future<ScheduleItem> addSchedule({
     required int userDrugId,
+    required String time,
+    required MealRelation mealRelation,
+    String? doseText,
+  });
+  Future<ScheduleItem> updateSchedule(
+    int id, {
     required String time,
     required MealRelation mealRelation,
     String? doseText,

@@ -6,8 +6,14 @@ import 'api_repository.dart';
 import 'mock_repository.dart';
 import 'repository.dart';
 
+/// 로그인 토큰. null 이면 로그인 화면이 보입니다.
+/// 지금은 메모리에만 있어서 앱을 다시 켜면 다시 로그인합니다(시연용으로 충분).
+final authTokenProvider = StateProvider<String?>((ref) => null);
+
 final repositoryProvider = Provider<PillRepository>(
-  (ref) => AppConfig.useMock ? MockRepository() : ApiRepository(),
+  (ref) => AppConfig.useMock
+      ? MockRepository()
+      : ApiRepository(tokenProvider: () => ref.read(authTokenProvider)),
 );
 
 final myDrugsProvider = FutureProvider.autoDispose<List<UserDrug>>(
