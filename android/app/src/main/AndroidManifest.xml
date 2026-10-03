@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:usesCleartextTraffic="true"
-        android:label="pillflow"
+        android:label="필플로우"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

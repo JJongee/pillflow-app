@@ -75,4 +75,27 @@ void main() {
     expect(await r.getSchedules(), isEmpty);
     expect(await r.getIntakes('2026-10-05'), isEmpty);
   });
+
+  test('전체 데이터 검색: 앞글자 일치 우선, 띄어쓰기 무시', () async {
+    final r = MockRepository();
+    final a = await r.searchDrugs('타이레놀');
+    expect(a.total, 7); // 앞글자 일치 4 + 포함 3
+    expect(a.items.first.itemName.startsWith('타이레놀'), isTrue);
+
+    final b = await r.searchDrugs('타이 레놀');
+    expect(b.total, a.total);
+  });
+
+  test('전체 데이터 검색: 페이지 나눠 받기', () async {
+    final r = MockRepository();
+    final p1 = await r.searchDrugs('정', page: 1, size: 20);
+    final p2 = await r.searchDrugs('정', page: 2, size: 20);
+    expect(p1.total, greaterThan(1000));
+    expect(p1.items.length, 20);
+    expect(p2.items.length, 20);
+    expect(p1.items.map((e) => e.itemSeq).toSet().intersection(p2.items.map((e) => e.itemSeq).toSet()), isEmpty);
+
+    final beyond = await r.searchDrugs('정', page: 999, size: 20);
+    expect(beyond.items, isEmpty);
+  });
 }

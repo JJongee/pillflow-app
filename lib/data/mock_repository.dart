@@ -1,17 +1,29 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/models.dart';
 import 'repository.dart';
 
+/// 12MB JSON 을 메인 스레드 밖에서 파싱 (화면 버벅임 방지)
+List<Map<String, dynamic>> _parseDrugs(String raw) =>
+    List<Map<String, dynamic>>.from(jsonDecode(raw) as List);
+
+/// 검색용 정규화: 띄어쓰기 무시, 영문 대소문자 무시
+String normalizeForSearch(String s) => s.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+
 /// 서버 없이 화면을 개발하기 위한 목업.
-/// - assets/mock/drugs.json : all_drugs_data.csv(e약은요)에서 뽑은 실제 15개 + DUR 전용 품목 1개
+/// - assets/mock/drugs.json : all_drugs_data.csv(e약은요) 전체 4,741품목 + DUR 전용 품목 1개
+///   (원본 4,758행 중 이미지만 다른 중복 17행은 합침, 날짜는 YYYY-MM-DD 로 정규화)
 /// - assets/mock/dur_rules.json : 병용금기·연령금기 실제 행에서 뽑은 규칙
 /// 앱을 껐다 켜면 내 약/시간표/기록은 초기화됩니다(메모리 저장).
 class MockRepository implements PillRepository {
-  List<Map<String, dynamic>>? _drugs;
-  Map<String, dynamic>? _rules;
+  List<Map<String, dynamic>> _drugs = const [];
+  Map<String, Map<String, dynamic>> _bySeq = const {};
+  List<String> _searchKeys = const []; // _drugs 와 같은 순서의 정규화된 이름
+  Map<String, dynamic> _rules = const {};
+  Future<void>? _loading;
 
   final List<UserDrug> _myDrugs = [];
   final List<ScheduleItem> _schedules = [];
@@ -23,17 +35,29 @@ class MockRepository implements PillRepository {
   /// 실제 네트워크처럼 로딩 상태가 보이도록 약간 지연
   Future<void> _delay() => Future.delayed(const Duration(milliseconds: 350));
 
+  /// 처음 한 번만 읽습니다. 동시에 여러 화면이 불러도 한 번만 파싱. 실패하면 다음에 다시 시도.
   Future<void> _load() async {
-    _drugs ??= (jsonDecode(await rootBundle.loadString('assets/mock/drugs.json')) as List)
-        .cast<Map<String, dynamic>>();
-    _rules ??= jsonDecode(await rootBundle.loadString('assets/mock/dur_rules.json'))
-        as Map<String, dynamic>;
+    try {
+      await (_loading ??= _doLoad());
+    } catch (_) {
+      _loading = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _doLoad() async {
+    final raw = await rootBundle.loadString('assets/mock/drugs.json');
+    final drugs = await compute(_parseDrugs, raw);
+    _rules = jsonDecode(await rootBundle.loadString('assets/mock/dur_rules.json')) as Map<String, dynamic>;
+    _bySeq = {for (final d in drugs) d['item_seq'] as String: d};
+    _searchKeys = [for (final d in drugs) normalizeForSearch(d['item_name'] as String)];
+    _drugs = drugs;
   }
 
   Map<String, dynamic> _drugJson(String itemSeq) {
-    final j = _drugs!.where((d) => d['item_seq'] == itemSeq);
-    if (j.isEmpty) throw RepoException('약 정보를 찾을 수 없어요.', code: 'NOT_FOUND');
-    return j.first;
+    final j = _bySeq[itemSeq];
+    if (j == null) throw RepoException('약 정보를 찾을 수 없어요.', code: 'NOT_FOUND');
+    return j;
   }
 
   String _today() => DateTime.now().toIso8601String().substring(0, 10);
@@ -48,17 +72,30 @@ class MockRepository implements PillRepository {
     return 'mock-token';
   }
 
+  /// 이름 검색. 앞글자가 일치하는 약을 먼저, 그다음 이름이 짧은 순.
   @override
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20}) async {
     await _load();
     await _delay();
-    final q = query.replaceAll(' ', '');
-    final hits = _drugs!
-        .where((d) => q.isEmpty || (d['item_name'] as String).replaceAll(' ', '').contains(q))
-        .map(DrugSummary.fromJson)
-        .toList();
+    final q = normalizeForSearch(query);
+    if (q.isEmpty) return Paged(items: const [], page: page, size: size, total: 0);
+
+    final prefix = <int>[], contains = <int>[];
+    for (var i = 0; i < _searchKeys.length; i++) {
+      final k = _searchKeys[i];
+      if (k.startsWith(q)) {
+        prefix.add(i);
+      } else if (k.contains(q)) {
+        contains.add(i);
+      }
+    }
+    int byLength(int a, int b) => _searchKeys[a].length.compareTo(_searchKeys[b].length);
+    prefix.sort(byLength);
+    contains.sort(byLength);
+    final hits = [...prefix, ...contains];
+
     final start = (page - 1) * size;
-    final items = start >= hits.length ? <DrugSummary>[] : hits.skip(start).take(size).toList();
+    final items = hits.skip(start).take(size).map((i) => DrugSummary.fromJson(_drugs[i])).toList();
     return Paged(items: items, page: page, size: size, total: hits.length);
   }
 
@@ -219,10 +256,10 @@ class MockRepository implements PillRepository {
     await _load();
     await _delay();
     final seqs = itemSeqs ?? _myDrugs.map((d) => d.itemSeq).toList();
-    final covered = (_rules!['dur_covered_item_seqs'] as List).cast<String>().toSet();
+    final covered = (_rules['dur_covered_item_seqs'] as List).cast<String>().toSet();
     final findings = <DurFinding>[];
 
-    for (final r in (_rules!['combination_rules'] as List).cast<Map<String, dynamic>>()) {
+    for (final r in (_rules['combination_rules'] as List).cast<Map<String, dynamic>>()) {
       final a = r['a_item_seq'] as String, b = r['b_item_seq'] as String;
       if (seqs.contains(a) && seqs.contains(b)) {
         findings.add(DurFinding(
@@ -239,7 +276,7 @@ class MockRepository implements PillRepository {
 
     final age = _birthYear == null ? null : DateTime.now().year - _birthYear!;
     if (age != null) {
-      for (final r in (_rules!['age_rules'] as List).cast<Map<String, dynamic>>()) {
+      for (final r in (_rules['age_rules'] as List).cast<Map<String, dynamic>>()) {
         final seq = r['item_seq'] as String;
         if (!seqs.contains(seq)) continue;
         final limit = r['age'] as int;
@@ -275,7 +312,7 @@ class MockRepository implements PillRepository {
     }).toList();
 
     return DurCheckResult(
-      dataVersion: _rules!['data_version'] as String?,
+      dataVersion: _rules['data_version'] as String?,
       checkedAt: _today(),
       ageUnknown: age == null,
       drugs: drugs,
