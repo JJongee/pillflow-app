@@ -1,0 +1,44 @@
+{
+ "_comment": "목업 전용. 실제 판별은 서버가 성분코드 쌍으로 수행. 내용은 게시_병용금기_급여_품목리스트_2609 / 연령금기 2609 실제 행에서 발췌.",
+ "data_version": "DUR 게시 2609",
+ "dur_covered_item_seqs": [
+  "200008591",
+  "197900277",
+  "200610765",
+  "EDI-649802851"
+ ],
+ "combination_rules": [
+  {
+   "a_item_seq": "200008591",
+   "b_item_seq": "EDI-649802851",
+   "ingredient_a": "aspirin",
+   "ingredient_b": "ketorolac tromethamine",
+   "detail": "중증의 위장관계 이상반응",
+   "condition_note": null,
+   "notice_no": "20080068",
+   "notice_date": "2008-01-01"
+  }
+ ],
+ "age_rules": [
+  {
+   "item_seq": "197900277",
+   "ingredient": "isopropylantipyrine 함유제제",
+   "age": 15,
+   "unit": "세",
+   "condition": "미만",
+   "detail": "이소프로필안티피린 함유제제(단일제, 복합제)",
+   "notice_no": "20110227",
+   "notice_date": "2011-11-24"
+  },
+  {
+   "item_seq": "200610765",
+   "ingredient": "cetirizine dihydrochloride",
+   "age": 6,
+   "unit": "세",
+   "condition": "미만",
+   "detail": "안전성 및 유효성 미확립",
+   "notice_no": "20090300",
+   "notice_date": "2009-12-03"
+  }
+ ]
+}

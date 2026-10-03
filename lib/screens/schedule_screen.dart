@@ -1,0 +1,177 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../data/providers.dart';
+import '../models/models.dart';
+import '../widgets/state_views.dart';
+
+/// 사용자가 직접 지정하는 복용 시간표 (자동 생성은 후속 개발)
+class ScheduleScreen extends ConsumerWidget {
+  const ScheduleScreen({super.key});
+
+  Future<void> _add(BuildContext context, WidgetRef ref) async {
+    final drugs = await ref.read(myDrugsProvider.future);
+    if (!context.mounted) return;
+    if (drugs.isEmpty) {
+      showSnack(context, '먼저 "약 찾기"에서 약을 등록해 주세요.');
+      return;
+    }
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AddScheduleSheet(drugs: drugs),
+    );
+    if (saved == true) {
+      ref.invalidate(schedulesProvider);
+      ref.invalidate(intakesProvider(todayString()));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(schedulesProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('복용 시간표')),
+      body: AsyncBody<List<ScheduleItem>>(
+        value: value,
+        onRetry: () => ref.invalidate(schedulesProvider),
+        data: (list) {
+          if (list.isEmpty) {
+            return EmptyView(
+              icon: Icons.schedule,
+              title: '아직 정한 복용 시간이 없어요',
+              message: '약마다 먹을 시간을 정해 두면 "오늘" 탭에서 체크할 수 있어요.',
+              action: FilledButton.icon(
+                onPressed: () => _add(context, ref),
+                icon: const Icon(Icons.add),
+                label: const Text('복용 시간 추가'),
+              ),
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.only(bottom: 100),
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final s = list[i];
+              return ListTile(
+                leading: Text(s.time, style: Theme.of(context).textTheme.titleLarge),
+                title: Text(s.itemName),
+                subtitle: Text([s.mealRelation.label, s.doseText].whereType<String>().join(' · ')),
+                trailing: IconButton(
+                  tooltip: '삭제',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () async {
+                    try {
+                      await ref.read(repositoryProvider).deleteSchedule(s.id);
+                      ref.invalidate(schedulesProvider);
+                      ref.invalidate(intakesProvider(todayString()));
+                    } catch (e) {
+                      if (context.mounted) showSnack(context, e.toString());
+                    }
+                  },
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: (value.valueOrNull?.isNotEmpty ?? false)
+          ? FloatingActionButton.extended(
+              onPressed: () => _add(context, ref),
+              icon: const Icon(Icons.add),
+              label: const Text('시간 추가', style: TextStyle(fontSize: 17)),
+            )
+          : null,
+    );
+  }
+}
+
+class _AddScheduleSheet extends ConsumerStatefulWidget {
+  const _AddScheduleSheet({required this.drugs});
+  final List<UserDrug> drugs;
+
+  @override
+  ConsumerState<_AddScheduleSheet> createState() => _AddScheduleSheetState();
+}
+
+class _AddScheduleSheetState extends ConsumerState<_AddScheduleSheet> {
+  late UserDrug _drug = widget.drugs.first;
+  TimeOfDay _time = const TimeOfDay(hour: 8, minute: 30);
+  MealRelation _meal = MealRelation.after;
+  final _dose = TextEditingController(text: '1정');
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _dose.dispose();
+    super.dispose();
+  }
+
+  String get _hhmm =>
+      '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await ref.read(repositoryProvider).addSchedule(
+            userDrugId: _drug.id,
+            time: _hhmm,
+            mealRelation: _meal,
+            doseText: _dose.text.trim().isEmpty ? null : _dose.text.trim(),
+          );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        showSnack(context, e.toString());
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('복용 시간 추가', style: t.titleLarge),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<UserDrug>(
+          value: _drug,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: '약'),
+          items: widget.drugs
+              .map((d) => DropdownMenuItem(value: d, child: Text(d.itemName, overflow: TextOverflow.ellipsis)))
+              .toList(),
+          onChanged: (d) => setState(() => _drug = d ?? _drug),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.access_time),
+          label: Text('시간  $_hhmm', style: const TextStyle(fontSize: 20)),
+          onPressed: () async {
+            final picked = await showTimePicker(context: context, initialTime: _time);
+            if (picked != null) setState(() => _time = picked);
+          },
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          children: MealRelation.values
+              .map((m) => ChoiceChip(
+                    label: Text(m.label, style: const TextStyle(fontSize: 16)),
+                    selected: _meal == m,
+                    onSelected: (_) => setState(() => _meal = m),
+                  ))
+              .toList(),
+        ),
+        const SizedBox(height: 12),
+        TextField(controller: _dose, decoration: const InputDecoration(labelText: '한 번에 먹는 양')),
+        const SizedBox(height: 20),
+        FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? '저장 중…' : '저장')),
+      ]),
+    );
+  }
+}
