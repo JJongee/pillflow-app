@@ -98,4 +98,14 @@ void main() {
     final beyond = await r.searchDrugs('정', page: 999, size: 20);
     expect(beyond.items, isEmpty);
   });
+
+  test('김서현 DB에서 확인된 조합: 멕시롱액 + 코메키나캡슐 (역순 등록도 동일)', () async {
+    final r = MockRepository();
+    await r.addMyDrug('201706199'); // 코메키나캡슐 먼저
+    await r.addMyDrug('199300273'); // 멕시롱액(돔페리돈)
+    final res = await r.checkDur();
+    expect(res.findings.single.type, FindingType.combination);
+    expect(res.findings.single.ingredients, isEmpty); // 목업엔 성분 정보 없음 → 화면에서 줄 숨김
+    expect(res.drugs.every((d) => d.verdict == Verdict.contraindicated), isTrue);
+  });
 }

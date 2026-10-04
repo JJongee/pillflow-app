@@ -8,7 +8,10 @@ import '../widgets/state_views.dart';
 
 /// 로그인 화면 틀. 서버 인증 형식(POST /auth/login)이 확정되면 api_repository.dart 의 login 만 맞추면 됩니다.
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.initialError});
+
+  /// 화면 상태 미리보기용: 처음부터 오류 문구를 보여줍니다.
+  final String? initialError;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -20,7 +23,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   late final _pw = TextEditingController(text: AppConfig.useMock ? '1234' : '');
   bool _loading = false;
   bool _hidePw = true;
-  String? _error;
+  late String? _error = widget.initialError;
 
   @override
   void dispose() {

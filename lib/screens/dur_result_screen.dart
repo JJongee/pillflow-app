@@ -14,11 +14,14 @@ import '../widgets/verdict_badge.dart';
 ///  - 데이터에 없는 약은 "판정 불가"로 표시 (안전 표시 금지)
 ///  - 경고에는 고시번호·고시일자·비고(조건)를 함께 표시
 class DurResultScreen extends ConsumerWidget {
-  const DurResultScreen({super.key});
+  const DurResultScreen({super.key, this.preview});
+
+  /// 화면 상태 미리보기용. 값이 있으면 서버/목업 대신 이 결과를 그대로 보여줍니다.
+  final DurCheckResult? preview;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final value = ref.watch(durCheckProvider);
+    final value = preview != null ? AsyncValue.data(preview!) : ref.watch(durCheckProvider);
     final birthYear = ref.watch(birthYearProvider).valueOrNull;
     final t = Theme.of(context).textTheme;
 
@@ -152,8 +155,9 @@ class _FindingCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
-          Text('성분: ${f.ingredients.join(', ')}', style: t.bodySmall),
-          Text('식약처 고시 ${f.noticeNo ?? '-'} · ${f.noticeDate ?? '-'}', style: t.bodySmall),
+          if (f.ingredients.isNotEmpty) Text('성분: ${f.ingredients.join(', ')}', style: t.bodySmall),
+          if (f.noticeNo != null || f.noticeDate != null)
+            Text('식약처 고시 ${f.noticeNo ?? '-'} · ${f.noticeDate ?? '-'}', style: t.bodySmall),
         ]),
       ),
     );

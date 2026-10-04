@@ -265,7 +265,7 @@ class MockRepository implements PillRepository {
         findings.add(DurFinding(
           type: FindingType.combination,
           itemSeqs: [a, b],
-          ingredients: [r['ingredient_a'] as String, r['ingredient_b'] as String],
+          ingredients: [r['ingredient_a'], r['ingredient_b']].whereType<String>().toList(),
           detail: r['detail'] as String,
           conditionNote: r['condition_note'] as String?,
           noticeNo: r['notice_no'] as String?,

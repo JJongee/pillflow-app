@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/config.dart';
 import '../data/providers.dart';
 import '../widgets/dialogs.dart';
+import 'state_preview_screen.dart';
 
 /// 설정: 태어난 해 · 데이터 출처 · 이용 안내 · 실행 모드 · 로그아웃
 class SettingsScreen extends ConsumerWidget {
@@ -73,6 +74,13 @@ class SettingsScreen extends ConsumerWidget {
           leading: const Icon(Icons.developer_mode_outlined),
           title: Text(AppConfig.useMock ? '목업 데이터 모드' : '서버 연결 모드'),
           subtitle: Text(AppConfig.useMock ? '서버 없이 assets/mock 데이터로 동작' : AppConfig.apiBase),
+        ),
+        ListTile(
+          leading: const Icon(Icons.preview_outlined),
+          title: const Text('화면 상태 미리보기'),
+          subtitle: const Text('로딩·빈 결과·오류·DUR 3단계·긴 약품명 (UI 검수용)'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const StatePreviewScreen())),
         ),
         const Divider(height: 32),
         ListTile(

@@ -1,11 +1,15 @@
 {
- "_comment": "목업 전용. 실제 판별은 서버가 성분코드 쌍으로 수행. 내용은 게시_병용금기_급여_품목리스트_2609 / 연령금기 2609 실제 행에서 발췌.",
+ "_comment": "목업 전용. 실제 판별은 서버가 DB(dur_interactions)로 수행. 아스피린+케토롤락·연령금기는 게시 2609 파일 실제 행, 멕시롱액 3쌍은 김서현 DB 문서(10/4)에서 금기 기록이 확인된 조합(사유 원문은 서버 연결 시 표시).",
  "data_version": "DUR 게시 2609",
  "dur_covered_item_seqs": [
   "200008591",
   "197900277",
   "200610765",
-  "EDI-649802851"
+  "EDI-649802851",
+  "199300273",
+  "201706199",
+  "202002383",
+  "202500360"
  ],
  "combination_rules": [
   {
@@ -17,6 +21,36 @@
    "condition_note": null,
    "notice_no": "20080068",
    "notice_date": "2008-01-01"
+  },
+  {
+   "a_item_seq": "199300273",
+   "b_item_seq": "201706199",
+   "ingredient_a": null,
+   "ingredient_b": null,
+   "detail": "병용금기 기록이 있는 조합이에요. (목업: 금기사유 원문은 서버 연결 시 DB에서 표시돼요)",
+   "condition_note": null,
+   "notice_no": null,
+   "notice_date": null
+  },
+  {
+   "a_item_seq": "199300273",
+   "b_item_seq": "202002383",
+   "ingredient_a": null,
+   "ingredient_b": null,
+   "detail": "병용금기 기록이 있는 조합이에요. (목업: 금기사유 원문은 서버 연결 시 DB에서 표시돼요)",
+   "condition_note": null,
+   "notice_no": null,
+   "notice_date": null
+  },
+  {
+   "a_item_seq": "199300273",
+   "b_item_seq": "202500360",
+   "ingredient_a": null,
+   "ingredient_b": null,
+   "detail": "병용금기 기록이 있는 조합이에요. (목업: 금기사유 원문은 서버 연결 시 DB에서 표시돼요)",
+   "condition_note": null,
+   "notice_no": null,
+   "notice_date": null
   }
  ],
  "age_rules": [
