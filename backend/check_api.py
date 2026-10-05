@@ -203,5 +203,23 @@ check("약을 지우면 시간표도 같이 삭제", lambda: s == 200 and b == [
 s, b = call("DELETE", f"/me/drugs/{drug2}", token=token_a)
 check("남은 약 정리 → 204", lambda: s == 204, s)
 
+# ---------- 10. 검색 목록 안의 병용금기 15쌍 (김서현 DB 기준) ----------
+print("[10] 병용금기 15쌍 (양방향)")
+DOMPERIDONE = {"199300273": "멕시롱액", "199600830": "그린큐액", "199601110": "크리맥액"}
+PARTNERS = {"201706199": "코메키나캡슐", "202002383": "코트리나캡슐", "202500360": "코시원큐캡슐",
+            "202500864": "코코엔캡슐", "202501617": "액티플루노즈캡슐"}
+for a, name_a in DOMPERIDONE.items():
+    for c, name_c in PARTNERS.items():
+        s1, b1 = call("POST", "/dur/check", {"item_seqs": [a, c]}, token_a)
+        s2, b2 = call("POST", "/dur/check", {"item_seqs": [c, a]}, token_a)
+        ok = lambda: (
+            s1 == 200 and s2 == 200
+            and {d["verdict"] for d in b1["drugs"]} == {"CONTRAINDICATED"}
+            and {d["verdict"] for d in b2["drugs"]} == {"CONTRAINDICATED"}
+            and len(b1["findings"]) >= 1 and b1["findings"] == b2["findings"]
+        )
+        verdicts = [d.get("verdict") for d in b1.get("drugs", [])] if isinstance(b1, dict) else b1
+        check(f"{name_a}({a}) + {name_c}({c}) → 금기, 순서 바꿔도 같음", ok, (s1, s2, verdicts))
+
 print(f"\n결과: 통과 {passed}개, 실패 {failed}개")
 sys.exit(1 if failed else 0)
