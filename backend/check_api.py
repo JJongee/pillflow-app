@@ -224,5 +224,23 @@ for a, name_a in DOMPERIDONE.items():
         verdicts = [d.get("verdict") for d in b1.get("drugs", [])] if isinstance(b1, dict) else b1
         check(f"{name_a}({a}) + {name_c}({c}) → 금기, 순서 바꿔도 같음", ok, (s1, s2, verdicts))
 
+# ---------- 11. 연령금기 (김서현 DB 2차 백업 이후) ----------
+print("[11] 연령금기")
+AGE_DRUG = "202200407"  # 타이레놀8시간이알서방정, 12세 미만 금기
+this_year = int(time.strftime("%Y"))
+call("PUT", "/me/profile", {"birth_year": this_year - 5}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
+ok = lambda: (
+    s == 200 and b["drugs"][0]["verdict"] == "CONTRAINDICATED"
+    and any(f["type"] == "AGE" and "12세 미만" in f["detail"] for f in b["findings"])
+)
+check("5세 사용자 + 12세 미만 금기 약 → 연령금기", ok, (s, b.get("findings") if isinstance(b, dict) else b))
+call("PUT", "/me/profile", {"birth_year": 1960}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
+check("성인 사용자 → 연령금기 없음", lambda: s == 200 and not any(f["type"] == "AGE" for f in b["findings"]), s)
+call("PUT", "/me/profile", {"birth_year": None}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
+check("태어난 해 없음 → age_unknown, 연령금기 판단 안 함", lambda: s == 200 and b["age_unknown"] is True and not any(f["type"] == "AGE" for f in b["findings"]), s)
+
 print(f"\n결과: 통과 {passed}개, 실패 {failed}개")
 sys.exit(1 if failed else 0)
