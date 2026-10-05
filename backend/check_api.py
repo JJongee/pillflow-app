@@ -43,6 +43,9 @@ def call(method, path, body=None, token=None, params=None, base=BASE):
             return e.code, json.loads(raw)
         except ValueError:
             return e.code, raw
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # 서버가 꺼졌거나(연결 거부) 멈춰서 대답이 없을 때(시간 초과)
+        return 0, f"서버 응답 없음: {getattr(e, 'reason', e)}"
 
 
 def check(name, cond, info=""):
@@ -68,10 +71,10 @@ print(f"점검 대상: {BASE}\n")
 
 # ---------- 0. 서버 연결 ----------
 print("[0] 서버 연결")
-try:
-    s, b = call("GET", "/", base=ROOT)
-except urllib.error.URLError as e:
-    print(f"  실패  서버에 연결할 수 없어요. 서버를 켰는지 확인하세요. ({e.reason})")
+s, b = call("GET", "/", base=ROOT)
+if s == 0:
+    print(f"  실패  {b}")
+    print("        서버를 켰는지, 서버 창이 '선택' 상태로 멈춰 있지 않은지(창에서 Esc) 확인하세요.")
     sys.exit(1)
 check("GET / 응답", s == 200, s)
 
