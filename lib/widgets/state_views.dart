@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/theme.dart';
+
 /// 로딩 · 빈 결과 · 오류 상태 공통 위젯 (체크리스트: 로딩·빈 결과·오류 상태 설계)
 
 class LoadingView extends StatelessWidget {
@@ -29,7 +31,7 @@ class EmptyView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 64, color: Colors.black38),
+            Icon(icon, size: 64, color: Toss.grey300),
             const SizedBox(height: 16),
             Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
             if (message != null) ...[

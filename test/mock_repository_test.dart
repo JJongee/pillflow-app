@@ -108,4 +108,43 @@ void main() {
     expect(res.findings.single.ingredients, isEmpty); // 목업엔 성분 정보 없음 → 화면에서 줄 숨김
     expect(res.drugs.every((d) => d.verdict == Verdict.contraindicated), isTrue);
   });
+
+  test('참고 정보(cautions): 타이레놀은 용량주의, 판정에는 영향 없음', () async {
+    final r = MockRepository();
+    await r.addMyDrug('202106092'); // 타이레놀정500밀리그람
+    final res = await r.checkDur();
+    expect(res.cautions.single.typeCode, 'DOSE');
+    expect(res.cautions.single.status, CautionStatus.confirmed);
+    expect(res.findings, isEmpty);
+    expect(res.drugs.single.verdict, isNot(Verdict.contraindicated));
+  });
+
+  test('시간표 제안: 정확한 횟수는 HIGH, 범위는 CONFIRM + 주의 문구', () async {
+    final r = MockRepository();
+    final beaje = await r.addMyDrug('198700405'); // 베아제정: 1일 3회 식후
+    final tylenol = await r.addMyDrug('202106092'); // 타이레놀: 1일 3~4회
+    final res = await r.suggestSchedules();
+    final b = res.suggestions.firstWhere((s) => s.userDrugId == beaje.id);
+    final t = res.suggestions.firstWhere((s) => s.userDrugId == tylenol.id);
+    expect(b.confidence, SuggestConfidence.high);
+    expect(b.slots.map((s) => s.time), ['08:00', '12:30', '18:30']);
+    expect(b.slots.first.mealRelation, MealRelation.after);
+    expect(t.confidence, SuggestConfidence.confirm);
+    expect(t.warnings, isNotEmpty);
+    expect(t.slots.length, 3);
+    expect(await r.getSchedules(), isEmpty); // 제안만 하고 저장하지 않음
+  });
+
+  test('회원가입: 같은 이메일은 DUPLICATE, 짧은 비밀번호는 VALIDATION_ERROR', () async {
+    final r = MockRepository();
+    await r.signup('new@pillflow.app', '1234');
+    await expectLater(
+      r.signup('NEW@pillflow.app', '1234'),
+      throwsA(isA<RepoException>().having((e) => e.code, 'code', 'DUPLICATE')),
+    );
+    await expectLater(
+      r.signup('a@b.co', '12'),
+      throwsA(isA<RepoException>().having((e) => e.code, 'code', 'VALIDATION_ERROR')),
+    );
+  });
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
 import '../widgets/state_views.dart';
+import 'schedule_suggest_screen.dart';
 
 /// 사용자가 직접 지정하는 복용 시간표 (자동 생성은 후속 개발)
 class ScheduleScreen extends ConsumerWidget {
@@ -17,6 +18,16 @@ class ScheduleScreen extends ConsumerWidget {
       return;
     }
     await _openSheet(context, ref, drugs: drugs);
+  }
+
+  Future<void> _suggest(BuildContext context, WidgetRef ref) async {
+    final drugs = await ref.read(myDrugsProvider.future);
+    if (!context.mounted) return;
+    if (drugs.isEmpty) {
+      showSnack(context, '먼저 "약 찾기"에서 약을 등록해 주세요.');
+      return;
+    }
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ScheduleSuggestScreen()));
   }
 
   Future<void> _edit(BuildContext context, WidgetRef ref, ScheduleItem s) =>
@@ -40,7 +51,17 @@ class ScheduleScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final value = ref.watch(schedulesProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('복용 시간표')),
+      appBar: AppBar(
+        title: const Text('복용 시간표'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => _suggest(context, ref),
+            icon: const Icon(Icons.auto_awesome_outlined),
+            label: const Text('자동 제안'),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
       body: AsyncBody<List<ScheduleItem>>(
         value: value,
         onRetry: () => ref.invalidate(schedulesProvider),
@@ -50,11 +71,19 @@ class ScheduleScreen extends ConsumerWidget {
               icon: Icons.schedule,
               title: '아직 정한 복용 시간이 없어요',
               message: '약마다 먹을 시간을 정해 두면 "오늘" 탭에서 체크할 수 있어요.',
-              action: FilledButton.icon(
-                onPressed: () => _add(context, ref),
-                icon: const Icon(Icons.add),
-                label: const Text('복용 시간 추가'),
-              ),
+              action: Column(mainAxisSize: MainAxisSize.min, children: [
+                FilledButton.icon(
+                  onPressed: () => _suggest(context, ref),
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('용법 보고 자동으로 제안받기'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () => _add(context, ref),
+                  icon: const Icon(Icons.add),
+                  label: const Text('직접 추가'),
+                ),
+              ]),
             );
           }
           return ListView.separated(

@@ -62,6 +62,20 @@ class MockRepository implements PillRepository {
 
   String _today() => DateTime.now().toIso8601String().substring(0, 10);
 
+  final Set<String> _accounts = {'demo@pillflow.app'};
+
+  /// 목업 회원가입: 서버와 같은 규칙 (형식·4자 미만 → 입력값 오류, 같은 이메일 → DUPLICATE)
+  @override
+  Future<void> signup(String email, String password) async {
+    await _delay();
+    final e = email.trim().toLowerCase();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e) || password.length < 4) {
+      throw RepoException('입력값을 확인해 주세요.', code: 'VALIDATION_ERROR');
+    }
+    if (_accounts.contains(e)) throw RepoException('이미 가입된 이메일이에요.', code: 'DUPLICATE');
+    _accounts.add(e);
+  }
+
   /// 목업 로그인: 이메일 형식과 비밀번호 4자 이상이면 통과
   @override
   Future<String> login(String email, String password) async {
@@ -311,12 +325,73 @@ class MockRepository implements PillRepository {
       return DurDrugVerdict(itemSeq: s, itemName: name, verdict: v);
     }).toList();
 
+    final cautions = (_rules['cautions'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(DurCaution.fromJson)
+        .where((c) => c.itemSeqs.any(seqs.contains))
+        .toList();
+
     return DurCheckResult(
       dataVersion: _rules['data_version'] as String?,
       checkedAt: _today(),
       ageUnknown: age == null,
       drugs: drugs,
       findings: findings,
+      cautions: cautions,
+    );
+  }
+
+  /// 서버 4-2 규칙을 단순화한 목업: 용법 문장의 "1일 N회"를 읽어 식사 시각에 배치
+  @override
+  Future<ScheduleSuggestResult> suggestSchedules({List<int>? userDrugIds}) async {
+    await _load();
+    final targets = _myDrugs.where((d) => userDrugIds == null || userDrugIds.contains(d.id)).toList();
+    const base = {'breakfast': '08:00', 'lunch': '12:30', 'dinner': '18:30', 'bedtime': '22:30'};
+    final out = <ScheduleSuggestion>[];
+    for (final d in targets) {
+      final text = (_bySeq[d.itemSeq]?['use_method'] as String?) ?? '';
+      final range = RegExp(r'1일\s*(\d+)\s*[~∼-]\s*(\d+)\s*회').firstMatch(text);
+      final single = RegExp(r'1일\s*(\d+)\s*회').firstMatch(text);
+      final n = range != null ? int.parse(range.group(1)!) : (single != null ? int.parse(single.group(1)!) : null);
+      final meal = text.contains('식후')
+          ? MealRelation.after
+          : text.contains('식전')
+              ? MealRelation.before
+              : text.contains('공복')
+                  ? MealRelation.empty
+                  : MealRelation.none;
+      final times = switch (n) {
+        1 => [base['breakfast']!],
+        2 => [base['breakfast']!, base['dinner']!],
+        3 => [base['breakfast']!, base['lunch']!, base['dinner']!],
+        4 => [base['breakfast']!, base['lunch']!, base['dinner']!, base['bedtime']!],
+        _ => <String>[],
+      };
+      final basis = text.split(RegExp(r'\n')).firstWhere((l) => l.contains('1일'), orElse: () => '').trim();
+      final warnings = <String>[
+        if (range != null && times.isNotEmpty) '횟수가 범위로 적혀 있어 작은 값($n회)으로 제안했어요. 확인해 주세요.',
+      ];
+      out.add(ScheduleSuggestion(
+        userDrugId: d.id,
+        itemSeq: d.itemSeq,
+        itemName: d.itemName,
+        confidence: times.isEmpty
+            ? SuggestConfidence.none
+            : (warnings.isEmpty ? SuggestConfidence.high : SuggestConfidence.confirm),
+        timesPerDay: times.isEmpty ? null : n,
+        slots: [for (final t in times) SuggestSlot(time: t, mealRelation: meal)],
+        basis: basis.isEmpty ? null : basis,
+        warnings: warnings,
+      ));
+    }
+    final dur = targets.length < 2 ? null : await checkDur(itemSeqs: targets.map((d) => d.itemSeq).toList());
+    return ScheduleSuggestResult(
+      suggestions: out,
+      durFindings: dur?.findings ?? const [],
+      notes: const [
+        '제안일 뿐이에요. 복용 방법은 처방과 약 설명서를 먼저 따라 주세요.',
+        '몇 정·몇 mL를 먹을지는 제안하지 않아요. 한 번에 먹는 양은 직접 입력해 주세요.',
+      ],
     );
   }
 }

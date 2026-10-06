@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/config.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
-import '../widgets/state_views.dart';
+import 'signup_screen.dart';
 
 /// 로그인 화면 틀. 서버 인증 형식(POST /auth/login)이 확정되면 api_repository.dart 의 login 만 맞추면 됩니다.
 class LoginScreen extends ConsumerStatefulWidget {
@@ -105,7 +105,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () => showSnack(context, '회원가입은 서버 인증이 정해지면 추가할게요.'),
+                  onPressed: _loading
+                      ? null
+                      : () => Navigator.of(context)
+                          .push(MaterialPageRoute(builder: (_) => const SignupScreen())),
                   child: const Text('처음이신가요? 회원가입'),
                 ),
                 if (AppConfig.useMock) ...[

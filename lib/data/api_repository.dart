@@ -34,6 +34,10 @@ class ApiRepository implements PillRepository {
         throw RepoException('로그인이 만료됐어요. 다시 로그인해 주세요.', code: 'UNAUTHORIZED');
       }
       final data = e.response?.data;
+      // 422: detail 이 목록(FastAPI 기본)이라 따로 처리
+      if (data is Map && data['code'] == 'VALIDATION_ERROR') {
+        throw RepoException('입력값을 확인해 주세요.', code: 'VALIDATION_ERROR');
+      }
       if (data is Map && data['detail'] is String) {
         throw RepoException(data['detail'] as String, code: data['code'] as String?);
       }
@@ -65,6 +69,19 @@ class ApiRepository implements PillRepository {
       rethrow;
     }
   }
+
+  @override
+  Future<void> signup(String email, String password) => _call(() async {
+        await _dio.post('/auth/signup', data: {'email': email, 'password': password});
+      });
+
+  @override
+  Future<ScheduleSuggestResult> suggestSchedules({List<int>? userDrugIds}) => _call(() async {
+        final r = await _dio.post('/me/schedules/suggest', data: {
+          if (userDrugIds != null) 'user_drug_ids': userDrugIds,
+        });
+        return ScheduleSuggestResult.fromJson(r.data as Map<String, dynamic>);
+      });
 
   @override
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20}) => _call(() async {

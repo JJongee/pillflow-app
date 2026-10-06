@@ -14,7 +14,7 @@ class VerdictBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (fg, bg, icon) = switch (verdict) {
       Verdict.contraindicated => (AppColors.danger, AppColors.dangerBg, Icons.warning_amber_rounded),
-      Verdict.noKnownIssue => (AppColors.ok, AppColors.okBg, Icons.check_circle_outline),
+      Verdict.noKnownIssue => (AppColors.neutral, AppColors.neutralBg, Icons.info_outline),
       Verdict.undetermined => (AppColors.unknown, AppColors.unknownBg, Icons.help_outline),
     };
     final size = large ? 18.0 : 15.0;

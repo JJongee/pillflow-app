@@ -1,5 +1,5 @@
 {
- "_comment": "목업 전용. 실제 판별은 서버가 DB(dur_interactions)로 수행. 아스피린+케토롤락·연령금기는 게시 2609 파일 실제 행, 멕시롱액 3쌍은 김서현 DB 문서(10/4)에서 금기 기록이 확인된 조합(사유 원문은 서버 연결 시 표시).",
+ "_comment": "목업 전용. 실제 판별은 서버가 DB(dur_interactions)로 수행. 아스피린+케토롤락·연령금기는 게시 2609 파일 실제 행, 멕시롱액 3쌍은 김서현 DB 문서(10/4)에서 금기 기록이 확인된 조합(사유 원문은 서버 연결 시 표시). cautions의 용량주의 예시는 서버 API_CHANGES.md 4-1의 실제 응답 예시.",
  "data_version": "DUR 게시 2609",
  "dur_covered_item_seqs": [
   "200008591",
@@ -73,6 +73,22 @@
    "detail": "안전성 및 유효성 미확립",
    "notice_no": "20090300",
    "notice_date": "2009-12-03"
+  }
+ ],
+ "cautions": [
+  {
+   "type": "DOSE",
+   "item_seqs": [
+    "202106092"
+   ],
+   "ingredients": [
+    "아세트아미노펜"
+   ],
+   "status": "CONFIRMED",
+   "grade": null,
+   "detail": "1일 최대 투여량 아세트아미노펜 4,000밀리그램",
+   "condition_note": "모든 제형 / 단일제·복합제 포함 / 하루 복용량이 이 양을 넘지 않게 하세요.",
+   "notice_date": "2014-12-30"
   }
  ]
 }

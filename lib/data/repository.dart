@@ -5,6 +5,7 @@ import '../models/models.dart';
 abstract class PillRepository {
   // 0. 인증 — 성공하면 access token 을 돌려줍니다.
   Future<String> login(String email, String password);
+  Future<void> signup(String email, String password);
 
   // 1. 검색·상세
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20});
@@ -31,6 +32,9 @@ abstract class PillRepository {
     String? doseText,
   });
   Future<void> deleteSchedule(int id);
+
+  /// 자동 시간표 제안 (서버는 저장하지 않음 → 고른 칸만 addSchedule 로 저장)
+  Future<ScheduleSuggestResult> suggestSchedules({List<int>? userDrugIds});
 
   // 4. 복용 기록
   Future<List<IntakeRecord>> getIntakes(String date);

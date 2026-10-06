@@ -43,4 +43,47 @@ void main() {
     expect(find.text('판정 불가'), findsOneWidget);
     expect(find.byIcon(Icons.help_outline), findsOneWidget);
   });
+
+  test('서버 v0.3 응답: 모르는 유형·cautions·기준 확인 중을 안전하게 해석', () {
+    final r = DurCheckResult.fromJson({
+      'data_version': 'DUR API 수집 2026-10-04',
+      'age_unknown': false,
+      'drugs': [
+        {'item_seq': '1', 'item_name': 'A', 'verdict': 'NO_KNOWN_ISSUE'},
+      ],
+      'findings': [
+        {'type': 'ELDERLY', 'item_seqs': ['1'], 'ingredients': [], 'detail': '노인 주의', 'notice_no': null},
+      ],
+      'cautions': [
+        {'type': 'PREGNANCY', 'item_seqs': ['1'], 'ingredients': ['x'], 'status': 'PENDING', 'grade': '2등급', 'detail': 'd'},
+        {'type': 'DOSE', 'item_seqs': ['1'], 'status': 'SOMETHING_NEW', 'detail': 'd2'},
+      ],
+      'notes': ['무시해도 됨'],
+    });
+    expect(r.findings.single.type, FindingType.other);
+    expect(r.findings.single.label, '노인주의');
+    expect(r.cautions.first.status, CautionStatus.pending);
+    expect(r.cautions.first.label, '임부금기');
+    expect(r.cautions.last.status, CautionStatus.pending); // 모르는 상태 → 확인 중
+    expect(Verdict.noKnownIssue.label, '확인된 금기 기록 없음');
+  });
+
+  test('시간표 제안 응답을 파싱한다', () {
+    final r = ScheduleSuggestResult.fromJson({
+      'suggestions': [
+        {
+          'user_drug_id': 12, 'item_seq': '202106092', 'item_name': '타이레놀', 'confidence': 'CONFIRM',
+          'times_per_day': 3,
+          'slots': [{'time': '08:00', 'meal_relation': 'NONE'}],
+          'basis': '1일 3~4회', 'warnings': ['확인해 주세요'],
+        }
+      ],
+      'base_times': {'wake': '07:00'},
+      'dur_findings': [],
+      'notes': ['제안일 뿐이에요.'],
+    });
+    expect(r.suggestions.single.confidence, SuggestConfidence.confirm);
+    expect(r.suggestions.single.slots.single.time, '08:00');
+    expect(r.notes, isNotEmpty);
+  });
 }

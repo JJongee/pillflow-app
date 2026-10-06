@@ -91,9 +91,9 @@ class StatePreviewScreen extends StatelessWidget {
           );
         }),
         header('DUR 판정'),
-        item(Icons.warning_amber_rounded, '금기 있음', '병용금기 + 조건(비고) + 연령금기',
+        item(Icons.warning_amber_rounded, '금기 있음 + 참고 정보', '병용·연령금기 카드 + 임부금기(기준 확인 중)·용량주의',
             () => _openScreen(context, DurResultScreen(preview: _danger))),
-        item(Icons.check_circle_outline, '확인된 금기 없음', '모든 약이 DUR 데이터에 있고 걸린 규칙 없음',
+        item(Icons.info_outline, '확인된 금기 기록 없음', '안전으로 보이지 않게 중립 색으로 표시',
             () => _openScreen(context, DurResultScreen(preview: _clean))),
         item(Icons.help_outline, '판정 불가 포함', 'DUR 데이터에 없는 약이 섞여 있을 때',
             () => _openScreen(context, DurResultScreen(preview: _undetermined))),
@@ -160,6 +160,7 @@ const _danger = DurCheckResult(
     DurDrugVerdict(itemSeq: 'A', itemName: '바이엘아스피린정500밀리그람', verdict: Verdict.contraindicated),
     DurDrugVerdict(itemSeq: 'B', itemName: '케토신주사(케토롤락트로메타민염)', verdict: Verdict.contraindicated),
     DurDrugVerdict(itemSeq: 'C', itemName: '게보린정(수출명:돌로린정)', verdict: Verdict.contraindicated),
+    DurDrugVerdict(itemSeq: 'D', itemName: '타이레놀정500밀리그람(아세트아미노펜)', verdict: Verdict.noKnownIssue),
   ],
   findings: [
     DurFinding(
@@ -178,6 +179,25 @@ const _danger = DurCheckResult(
       detail: '15세 미만 금기 · 이소프로필안티피린 함유제제(단일제, 복합제)',
       noticeNo: '20110227',
       noticeDate: '2011-11-24',
+    ),
+  ],
+  cautions: [
+    DurCaution(
+      typeCode: 'PREGNANCY',
+      itemSeqs: ['C'],
+      ingredients: ['이소프로필안티피린'],
+      status: CautionStatus.pending,
+      grade: '2등급',
+      detail: '임부금기 2등급 · 임부에 대한 안전성 미확립 (미리보기 예시)',
+    ),
+    DurCaution(
+      typeCode: 'DOSE',
+      itemSeqs: ['D'],
+      ingredients: ['아세트아미노펜'],
+      status: CautionStatus.confirmed,
+      detail: '1일 최대 투여량 아세트아미노펜 4,000밀리그램',
+      conditionNote: '모든 제형 / 단일제·복합제 포함 / 하루 복용량이 이 양을 넘지 않게 하세요.',
+      noticeDate: '2014-12-30',
     ),
   ],
 );

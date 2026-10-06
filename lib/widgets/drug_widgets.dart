@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme.dart';
+
 /// 약 이미지. 이미지가 없거나(CSV 1,990건) 불러오기 실패하면 기본 아이콘.
 class DrugImage extends StatelessWidget {
   const DrugImage({super.key, this.url, this.size = 56});
@@ -11,11 +13,11 @@ class DrugImage extends StatelessWidget {
     final placeholder = Container(
       width: size,
       height: size,
-      color: const Color(0xFFEDEFF1),
-      child: Icon(Icons.medication_outlined, size: size * 0.5, color: Colors.black38),
+      color: Toss.grey100,
+      child: Icon(Icons.medication_outlined, size: size * 0.5, color: Toss.grey400),
     );
     return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(14),
       child: url == null
           ? placeholder
           : Image.network(
@@ -58,16 +60,16 @@ class _InfoSectionState extends State<InfoSection> {
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: InkWell(
         onTap: long ? () => setState(() => _open = !_open) : null,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text(widget.title, style: t.titleMedium)),
+              Expanded(child: Text(widget.title, style: t.titleMedium?.copyWith(fontSize: 18))),
               if (long) Icon(_open ? Icons.expand_less : Icons.expand_more),
             ]),
             const SizedBox(height: 8),
-            Text(shown, style: t.bodyLarge?.copyWith(color: body == null ? Colors.black45 : null)),
+            Text(shown, style: t.bodyLarge?.copyWith(color: body == null ? Toss.grey500 : null)),
           ]),
         ),
       ),
