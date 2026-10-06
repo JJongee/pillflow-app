@@ -12,6 +12,7 @@ from drugs import router as drugs_router
 from dur import router as dur_router
 from me import router as me_router
 from schedules import router as schedules_router
+from suggest import router as suggest_router
 
 app = FastAPI(title="Pillflow API")
 
@@ -46,6 +47,7 @@ app.include_router(drugs_router)
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(schedules_router)
+app.include_router(suggest_router)
 app.include_router(dur_router)
 
 # 서버용 표(users, user_drugs, schedules, intake_logs)가 없으면 만들고,

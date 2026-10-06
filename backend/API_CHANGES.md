@@ -1,6 +1,6 @@
 # API 계약 v0.2 → 실제 서버 차이 (v0.3 제안)
 
-> 작성: 주연우(서버) · 2026-10-05 · 기준: `docs/api_contract.md` v0.2, 서버 `backend/` (점검 66개 통과)
+> 작성: 주연우(서버) · 2026-10-06 · 기준: `docs/api_contract.md` v0.2, 서버 `backend/` (점검 77개 통과)
 > 고연수 님과 합의되면 `docs/api_contract.md`를 v0.3으로 고칩니다. 그 전까지는 이 문서가 서버의 실제 동작입니다.
 
 **요약**: 경로·필드 이름·코드값은 v0.2와 같습니다. 바뀐 건 아래 표의 항목뿐이고, 앱이 꼭 고쳐야 하는 건 없습니다.
@@ -13,6 +13,7 @@
 | `POST /auth/signup` | 바디 `{"email", "password"}` → `201 {"id", "email"}`. 이메일은 소문자로 저장. 같은 이메일 `409 DUPLICATE`, 형식 오류·비밀번호 4자 미만 `422` |
 | `GET /auth/me` | 토큰 확인용. `{"id", "email"}` |
 | DUR 응답 `notes` | 안내 문구 목록. 앱은 무시해도 됨 |
+| `POST /me/schedules/suggest` | 자동 복용 시간표 **제안**(10/6 추가). v0.2에 없던 새 API. 저장은 기존 `POST /me/schedules`로 하므로 시간표 API는 바뀌지 않음 (아래 4-2) |
 | DUR 응답 `cautions` | 임부금기·용량주의 참고 정보(10/5 추가). 판정에는 영향 없음. 앱은 지금 무시해도 되고, 나중에 화면에 붙이면 됨 (아래 4-1) |
 
 ## 2. 에러 `code` 값
@@ -85,6 +86,44 @@
 
 - 임신 여부·복용량 입력이 없어 **판정(`verdict`)은 바꾸지 않습니다.** 입력이 생기면 2단계에서 판정에 넣을 수 있습니다.
 - 앱 표시 제안: 임부금기는 "임신 중이라면 금기", 용량주의는 "하루 최대량 주의" 정보 카드.
+
+## 4-2. `POST /me/schedules/suggest` (새 API)
+
+준비안 "자동 시간표 준비안 (필플로우 2단계)"의 규칙 9개를 그대로 구현했습니다. **서버는 제안만 하고 저장하지 않습니다.**
+
+요청 (전부 생략 가능. 빼면 내 약 전체 + 기본 시각):
+```json
+{"user_drug_ids": [12], "base_times": {"wake": "07:00", "breakfast": "08:00", "lunch": "12:30", "dinner": "18:30", "bedtime": "22:30"}}
+```
+
+응답:
+```json
+{"suggestions": [{"user_drug_id": 12, "item_seq": "202106092",
+   "item_name": "타이레놀정500밀리그람(아세트아미노펜)",
+   "confidence": "CONFIRM", "times_per_day": 3,
+   "slots": [{"time": "08:00", "meal_relation": "NONE"},
+             {"time": "12:30", "meal_relation": "NONE"},
+             {"time": "18:30", "meal_relation": "NONE"}],
+   "basis": "만 12세 이상 소아 및 성인은 1회 1~2정씩, 1일 3~4회(4~6시간 마다) 필요시 복용합니다.",
+   "warnings": ["횟수가 범위로 적혀 있어 작은 값(3회)으로 제안했어요. 확인해 주세요."]}],
+ "base_times": {"wake": "07:00", "breakfast": "08:00", "lunch": "12:30", "dinner": "18:30", "bedtime": "22:30"},
+ "dur_findings": [], "notes": ["제안일 뿐이에요. ...", "몇 정·몇 mL를 먹을지는 제안하지 않아요. ..."]}
+```
+
+| 칸 | 값 |
+|---|---|
+| `confidence` | `HIGH`(그대로 쓸 만함) / `CONFIRM`(확인 필요) / `NONE`(제안 없음, `slots`는 빈 목록) |
+| `times_per_day` | 하루 횟수. 읽지 못하면 `null` |
+| `slots[].meal_relation` | 시간표 API와 같은 `BEFORE`·`AFTER`·`EMPTY`·`NONE` |
+| `basis` | 근거가 된 용법 문장 한 줄 (화면에 함께 보여 주면 좋음) |
+| `warnings` | 사용자에게 보여 줄 주의 문구. 없으면 빈 목록 |
+| `dur_findings` | `/dur/check`의 `findings`와 같은 모양. 금기가 있어도 시간은 바꾸지 않음 |
+
+- `base_times`는 5개 이름(`wake`, `breakfast`, `lunch`, `dinner`, `bedtime`) 중 바꿀 것만 보내면 됩니다. 이름이 틀리거나 `HH:mm`이 아니면 422.
+- 내 약이 아닌 번호를 섞어 보내도 조용히 무시합니다(존재 자체를 알리지 않음).
+- 앱 제안: `confidence`가 `NONE`이면 "직접 정해 주세요" 화면으로, `CONFIRM`이면 `warnings`를 먼저 보여 주고 사용자가 고칠 수 있게 해 주세요. `dose_text`는 서버가 비워 두니 사용자가 입력합니다.
+
+회고에서 정할 것: 기준 시각 기본값, 식간을 `EMPTY`로 묶을지, 용법 원문을 어떻게 보여 줄지.
 
 ## 5. v0.2 "서버 쪽에 확인하고 싶은 것" 답
 

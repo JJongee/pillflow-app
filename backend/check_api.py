@@ -256,5 +256,37 @@ check("샤젠캡슐 → 임부금기 2등급 (findings에는 안 들어감)", ok
 s, b = call("POST", "/dur/check", {"item_seqs": ["200003488"]}, token_a)
 check("기준 확인 중인 임부금기도 빠지지 않음", lambda: s == 200 and any(c["status"] == "PENDING" for c in b["cautions"]), s)
 
+# ---------- 13. 자동 복용 시간표 제안 ----------
+print("[13] 자동 시간표 제안")
+s, b = call("POST", "/me/schedules/suggest")
+check("토큰 없이 제안 → 401", lambda: s == 401, s)
+s, b = call("POST", "/me/drugs", {"item_seq": "202106092"}, token_a)  # 타이레놀정500, 1일 3~4회
+sug_drug = b.get("id") if isinstance(b, dict) else None
+s, b = call("POST", "/me/schedules/suggest", None, token_a)
+ok = lambda: (
+    s == 200 and len(b["suggestions"]) == 1
+    and b["suggestions"][0]["user_drug_id"] == sug_drug
+    and b["suggestions"][0]["confidence"] in ("HIGH", "CONFIRM", "NONE")
+    and len(b["suggestions"][0]["slots"]) == (b["suggestions"][0]["times_per_day"] or 0)
+)
+check("내 약 전체 제안 (바디 없음)", ok, (s, b.get("suggestions") if isinstance(b, dict) else b))
+first = b["suggestions"][0] if isinstance(b, dict) and b.get("suggestions") else {}
+check("타이레놀 1일 3~4회 → 3회로 제안 + 확인 요청", lambda: first.get("times_per_day") == 3 and first.get("confidence") == "CONFIRM" and first.get("warnings"), (first.get("times_per_day"), first.get("confidence")))
+check("시각은 모두 HH:mm, 식사 관계는 정해진 값", lambda: all(len(x["time"]) == 5 and x["meal_relation"] in ("BEFORE", "AFTER", "EMPTY", "NONE") for x in first.get("slots", [])), first.get("slots"))
+check("근거 문장과 안내가 함께 온다", lambda: isinstance(first.get("basis"), str) and len(b["notes"]) >= 2, (first.get("basis"), b.get("notes")))
+s, b = call("POST", "/me/schedules/suggest", {"base_times": {"breakfast": "07:00", "lunch": "12:00", "dinner": "19:00"}}, token_a)
+ok = lambda: s == 200 and b["base_times"]["breakfast"] == "07:00" and b["suggestions"][0]["slots"][0]["time"] == "07:00"
+check("기준 시각을 바꾸면 제안 시각도 바뀐다", ok, (s, b.get("base_times") if isinstance(b, dict) else b))
+s, b = call("POST", "/me/schedules/suggest", {"base_times": {"breakfast": "7:00"}}, token_a)
+check("시각 형식 오류(7:00) → 422", lambda: s == 422, s)
+s, b = call("POST", "/me/schedules/suggest", {"base_times": {"brunch": "10:00"}}, token_a)
+check("없는 기준 시각 이름 → 422", lambda: s == 422, s)
+s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [999999]}, token_a)
+check("남의(없는) 약 번호 → 빈 제안", lambda: s == 200 and b["suggestions"] == [], (s, b))
+s, b = call("POST", "/me/schedules/suggest", None, token_b)
+check("다른 사용자는 내 제안이 안 보임", lambda: s == 200 and b["suggestions"] == [], (s, b))
+s, b = call("DELETE", f"/me/drugs/{sug_drug}", token=token_a)
+check("제안 점검용 약 정리 → 204", lambda: s == 204, s)
+
 print(f"\n결과: 통과 {passed}개, 실패 {failed}개")
 sys.exit(1 if failed else 0)
