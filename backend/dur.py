@@ -1,4 +1,4 @@
-"""DUR 판별 API: 병용금기 + 연령금기. (김서현 DB 사용)
+"""DUR 판별 API: 병용금기 + 연령금기 판정, 임부금기·용량주의 참고 정보. (김서현 DB 사용)
 
 판정 기준 (api_contract v0.2, 김서현 ERD 명세)
 - CONTRAINDICATED : 함께 고른 약 사이 병용금기 기록이 있거나, 사용자 나이가 연령금기 기준에 해당(될 수 있음)
@@ -8,9 +8,15 @@
 병용금기는 A-B, B-A 양쪽을 모두 조회하고, 순서를 바꿔 넣어도 결과가 같다.
 연령금기는 태어난 해만 알기 때문에, 생일에 따라 해당 여부가 갈리는 경계도 "해당될 수 있음"으로 경고한다.
 연령금기 표가 없는 예전 DB에서도 병용금기는 그대로 동작한다.
+
+임부금기·용량주의는 사용자 입력(임신 여부, 1일 복용량)이 아직 없어서 판정(verdict)에 넣지 않고,
+`cautions`에 약별 참고 정보로 돌려준다. 기준 확인 중(pending)·충돌(conflict)인 기록도 빼지 않는다.
+앱은 findings의 AGE 외 type을 모두 병용금기로 보여 주므로, 이 정보는 findings가 아니라 cautions에만 넣는다.
 """
 
 import datetime as dt
+import json
+import re
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -60,6 +66,38 @@ AGE_PENDING_SQL = text(
     "SELECT item_seq, prohibition_reason, remark FROM v_dur_age_pending WHERE item_seq IN :seqs"
 ).bindparams(bindparam("seqs", expanding=True))
 
+# 임부금기·용량주의 뷰가 있는 DB인지
+CAUTION_READY_SQL = text(
+    "SELECT to_regclass('public.v_app_pregnancy_warnings') IS NOT NULL, "
+    "to_regclass('public.v_app_dose_warnings') IS NOT NULL"
+)
+
+PREGNANCY_SQL = text(
+    """
+    SELECT v.item_seq, v.prohibition_reason, v.remark, v.grade_raw, v.grade_link_status AS status,
+           p.raw_record->>'INGR_NAME' AS ingredient_name, p.raw_record->>'NOTIFICATION_DATE' AS notification_date
+    FROM v_app_pregnancy_warnings v
+    LEFT JOIN dur_pregnancy_products p ON p.record_hash = v.record_hash
+    WHERE v.item_seq IN :seqs
+    """
+).bindparams(bindparam("seqs", expanding=True))
+
+DOSE_SQL = text(
+    """
+    SELECT v.item_seq, v.prohibition_reason, v.remark, v.dose_link_status AS status, v.linked_rules,
+           p.raw_record->>'INGR_NAME' AS ingredient_name, p.raw_record->>'NOTIFICATION_DATE' AS notification_date
+    FROM v_app_dose_warnings v
+    LEFT JOIN dur_dose_products p ON p.record_hash = v.record_hash
+    WHERE v.item_seq IN :seqs
+    """
+).bindparams(bindparam("seqs", expanding=True))
+
+STATUS = {"linked": "CONFIRMED", "pending": "PENDING", "conflict": "CONFLICT"}
+NOTE_PREG_PENDING = "임부금기 등급 기준을 확인 중이에요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
+NOTE_PREG_CONFLICT = "임부금기 기준이 서로 달라 등급을 정하지 못했어요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
+NOTE_DOSE_PENDING = "1일 최대 투여량 기준을 확인 중이에요. 정해진 용량을 넘기지 말고, 궁금하면 의사·약사와 상담하세요."
+NOTE_CAUTIONS = "임부금기·용량주의는 판정에 넣지 않고 cautions에 참고 정보로 알려 줘요. (임신 여부·복용량 입력 전)"
+
 UNIT_DAYS = {"year": 365.25, "month": 30.4375, "week": 7}
 RANK = {"NO_KNOWN_ISSUE": 0, "UNDETERMINED": 1, "CONTRAINDICATED": 2}
 NOTE_NOT_SAFE = "기록 없음(NO_KNOWN_ISSUE)은 '안전'이 아니라, 수집된 데이터에 금기 기록이 없다는 뜻이에요."
@@ -86,12 +124,24 @@ class DurFinding(BaseModel):
     notice_date: str | None
 
 
+class DurCaution(BaseModel):
+    type: str  # PREGNANCY(임부금기) / DOSE(용량주의)
+    item_seqs: list[str]  # 약 1개 (findings와 같은 모양)
+    ingredients: list[str]
+    status: str  # CONFIRMED / PENDING(기준 확인 중) / CONFLICT(기준 충돌)
+    grade: str | None  # 임부금기 등급 (1등급·2등급), 모르면 null
+    detail: str
+    condition_note: str | None
+    notice_date: str | None
+
+
 class DurCheckResult(BaseModel):
     data_version: str | None
     checked_at: str
     age_unknown: bool
     drugs: list[DurDrug]
     findings: list[DurFinding]
+    cautions: list[DurCaution]
     notes: list[str]
 
 
@@ -125,6 +175,76 @@ def age_match(birth_year, operator, value, unit, today):
 def join_text(*parts):
     parts = [clean(p) for p in parts if clean(p)]
     return " / ".join(dict.fromkeys(parts)) or None
+
+
+def tidy_reason(value):
+    """DUR 원문 사유 정리: 줄바꿈·따옴표를 정리하고 '-'만 있으면 없음으로 본다."""
+    value = clean(value)
+    if not value:
+        return None
+    value = re.sub(r"\s+", " ", value).strip().strip('"').strip()
+    value = value.strip("- ").strip()
+    return value or None
+
+
+def build_cautions(seqs, preg_rows=(), dose_rows=()):
+    """임부금기·용량주의 참고 정보. 판정에는 쓰지 않는다. 기준 확인 중인 기록도 빼지 않는다."""
+    items = {}
+    order = {s: i for i, s in enumerate(seqs)}
+
+    for row in preg_rows:
+        s = row["item_seq"]
+        status = STATUS.get(row["status"], "PENDING")
+        grade = clean(row["grade_raw"]) if status == "CONFIRMED" else None
+        reason = tidy_reason(row["prohibition_reason"])
+        ingr = clean(row["ingredient_name"])
+        if status == "CONFIRMED":
+            detail = f"임부금기 {grade}" if grade else "임부금기"
+            note = join_text(row["remark"], "임신 중이거나 가능성이 있다면 의사·약사와 상담하세요.")
+        else:
+            detail = "임부금기 기준 확인 중"
+            note = join_text(row["remark"], NOTE_PREG_CONFLICT if status == "CONFLICT" else NOTE_PREG_PENDING)
+        if reason:
+            detail += f" · {reason}"
+        key = (order.get(s, 999), "1", s, ingr or "", detail)
+        items.setdefault(key, {
+            "type": "PREGNANCY", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
+            "status": status, "grade": grade, "detail": detail, "condition_note": note,
+            "notice_date": norm_date(row["notification_date"]),
+        })
+
+    for row in dose_rows:
+        s = row["item_seq"]
+        status = STATUS.get(row["status"], "PENDING")
+        rules = row["linked_rules"] or []
+        if isinstance(rules, str):
+            rules = json.loads(rules)
+        if status == "CONFIRMED" and rules:
+            for rule in rules:
+                ingr = clean(rule.get("ingredient_name")) or clean(row["ingredient_name"])
+                qty = clean(rule.get("max_qty_raw"))
+                detail = f"1일 최대 투여량 {qty}" if qty else "용량주의"
+                note = join_text(tidy_reason(rule.get("prohibition_reason")), rule.get("remark"), row["remark"],
+                                 "하루 복용량이 이 양을 넘지 않게 하세요.")
+                key = (order.get(s, 999), "2", s, ingr or "", detail)
+                items.setdefault(key, {
+                    "type": "DOSE", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
+                    "status": "CONFIRMED", "grade": None, "detail": detail, "condition_note": note,
+                    "notice_date": norm_date(row["notification_date"]),
+                })
+        else:
+            ingr = clean(row["ingredient_name"])
+            reason = tidy_reason(row["prohibition_reason"])
+            detail = "1일 최대 투여량 기준 확인 중" + (f" · {reason}" if reason else "")
+            key = (order.get(s, 999), "2", s, ingr or "", detail)
+            items.setdefault(key, {
+                "type": "DOSE", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
+                "status": "CONFLICT" if status == "CONFLICT" else "PENDING", "grade": None, "detail": detail,
+                "condition_note": join_text(row["remark"], NOTE_DOSE_PENDING),
+                "notice_date": norm_date(row["notification_date"]),
+            })
+
+    return [items[k] for k in sorted(items)]
 
 
 def build_result(seqs, fetched, rows, age_rows=(), pending_rows=(), birth_year=None, today=None):
@@ -234,18 +354,27 @@ def dur_check(
         if age_ready:
             age_rows = db.execute(AGE_SQL, {"seqs": seqs}).mappings().all()
             pending_rows = db.execute(AGE_PENDING_SQL, {"seqs": seqs}).mappings().all()
+    preg_rows, dose_rows = [], []
+    preg_ready, dose_ready = db.execute(CAUTION_READY_SQL).one()
+    if seqs and preg_ready:
+        preg_rows = db.execute(PREGNANCY_SQL, {"seqs": seqs}).mappings().all()
+    if seqs and dose_ready:
+        dose_rows = db.execute(DOSE_SQL, {"seqs": seqs}).mappings().all()
     if len(seqs) >= 2:
         rows = db.execute(PAIR_SQL, {"seqs_a": seqs, "seqs_b": seqs}).mappings().all()
 
     drugs, findings = build_result(seqs, fetched, rows, age_rows, pending_rows, user.birth_year)
+    cautions = build_cautions(seqs, preg_rows, dose_rows)
 
     notes = []
     if age_ready:
-        notes.append("병용금기와 연령금기를 판별해요. 임부금기 등은 아직 반영 전이에요.")
+        notes.append("병용금기와 연령금기를 판별해요.")
         if user.birth_year is None and (age_rows or pending_rows):
             notes.append("연령금기 기준이 있는 약이 있어요. 태어난 해를 입력하면 연령금기도 확인할 수 있어요.")
     else:
         notes.append("현재 DB에는 연령금기 데이터가 없어 병용금기만 판별해요.")
+    if preg_ready or dose_ready:
+        notes.append(NOTE_CAUTIONS)
     notes.append(NOTE_NOT_SAFE)
 
     version = db.execute(VERSION_SQL).scalar()
@@ -255,5 +384,6 @@ def dur_check(
         "age_unknown": user.birth_year is None,
         "drugs": drugs,
         "findings": findings,
+        "cautions": cautions,
         "notes": notes,
     }

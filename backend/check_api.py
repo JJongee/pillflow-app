@@ -242,5 +242,19 @@ call("PUT", "/me/profile", {"birth_year": None}, token_a)
 s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
 check("태어난 해 없음 → age_unknown, 연령금기 판단 안 함", lambda: s == 200 and b["age_unknown"] is True and not any(f["type"] == "AGE" for f in b["findings"]), s)
 
+# ---------- 12. 임부금기·용량주의 참고 정보 (김서현 DB 3차 백업 이후) ----------
+print("[12] 임부금기·용량주의 (cautions)")
+s, b = call("POST", "/dur/check", {"item_seqs": ["202106092"]}, token_a)
+ok = lambda: (
+    s == 200 and b["drugs"][0]["verdict"] == "NO_KNOWN_ISSUE"
+    and any(c["type"] == "DOSE" and c["status"] == "CONFIRMED" and "4,000" in c["detail"] for c in b["cautions"])
+)
+check("타이레놀정500 → 용량주의(1일 4,000mg), 판정은 그대로", ok, (s, b.get("cautions") if isinstance(b, dict) else b))
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
+ok = lambda: s == 200 and any(c["type"] == "PREGNANCY" and c["grade"] == "2등급" for c in b["cautions"]) and b["findings"] == []
+check("샤젠캡슐 → 임부금기 2등급 (findings에는 안 들어감)", ok, s)
+s, b = call("POST", "/dur/check", {"item_seqs": ["200003488"]}, token_a)
+check("기준 확인 중인 임부금기도 빠지지 않음", lambda: s == 200 and any(c["status"] == "PENDING" for c in b["cautions"]), s)
+
 print(f"\n결과: 통과 {passed}개, 실패 {failed}개")
 sys.exit(1 if failed else 0)
