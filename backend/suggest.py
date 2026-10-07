@@ -50,6 +50,12 @@ MEAL_CUES = [
 NEGATE = r"(?:피하|피해|말|금)"  # "공복 시를 피하여" 처럼 뒤집는 문구 (규칙 6)
 
 AS_NEEDED = r"필요시|필요할\s*때|필요에\s*따라"
+# 나이에 따라 용법이 달라지는 문장 (손채은 10/7 제안). 서버는 나이에 맞는 용량을 고르지 않는다.
+AGE_NUMBER = r"만?\s*(\d+)\s*(?:세|개월)"
+AGE_GROUP = r"소아|영아|유아|고령자|노인"
+AGE_MIN = r"만?\s*(\d+)\s*세\s*이상"
+NOTE_AGE_UNKNOWN = "나이에 따라 먹는 양이 달라요. 생년월일을 입력하면 더 정확히 안내할 수 있어요."
+NOTE_AGE_CHECK = "나이에 따라 먹는 양이 달라요. 본인 나이에 맞는 내용인지 용법 원문을 확인해 주세요."
 BEDTIME_CUE = r"취침|자기\s*전|잠자기\s*전|잘\s*때"
 
 SHIFT = {"BEFORE": -30, "AFTER": 30, "EMPTY": 120, "NONE": 0}  # 분
@@ -94,6 +100,7 @@ class DrugSuggestion(BaseModel):
 class SuggestResult(BaseModel):
     suggestions: list[DrugSuggestion]
     base_times: dict[str, str]
+    age_known: bool  # 나이를 알면 나이별 용법에 맞춰 확인을 요청한다
     dur_findings: list[dict]
     notes: list[str]
 
@@ -160,8 +167,34 @@ def read_min_gap_hours(text_value):
     return int(match.group(1)) if match else None
 
 
-def suggest_one(use_method, base_times):
-    """용법 문장 하나를 읽어 제안을 만든다. (DB·FastAPI 없이 시험 가능한 순수 함수)"""
+def read_age_limits(text_value):
+    """용법에 적힌 '만 N세 이상' 기준들. 없으면 빈 목록."""
+    return sorted({int(m) for m in re.findall(AGE_MIN, text_value)})
+
+
+def age_warning(text_value, age_range):
+    """나이와 용법이 맞지 않으면 확인을 요청한다. (손채은 10/7 제안)
+    age_range는 (가장 적은 나이, 가장 많은 나이). 모르면 None.
+    나이 구분이 없거나, 나이를 알고 그 구간에 들어가면 경고하지 않는다."""
+    ages = sorted({int(m) for m in re.findall(AGE_NUMBER, text_value)})
+    group = bool(re.search(AGE_GROUP, text_value))
+    if not ages and not group:
+        return None
+    if age_range is None:
+        return NOTE_AGE_UNKNOWN
+    limits = read_age_limits(text_value)
+    # 적힌 기준 중 가장 낮은 나이에도 못 미치면, 그 용법은 이 사람 것이 아니다
+    if limits and age_range[1] < limits[0]:
+        return f"이 약의 용법은 만 {limits[0]}세 이상 기준이에요. 나이에 맞는 용법인지 의사·약사와 확인해 주세요."
+    # 나이 구간이 둘 이상이면 어느 구간인지 사람이 골라야 한다
+    if len(ages) >= 2 or group:
+        return NOTE_AGE_CHECK
+    return None
+
+
+def suggest_one(use_method, base_times, age_range=None):
+    """용법 문장 하나를 읽어 제안을 만든다. (DB·FastAPI 없이 시험 가능한 순수 함수)
+    age_range를 주면 나이별 용법이 있는 약에 확인 요청을 붙인다."""
     none_result = {"confidence": "NONE", "times_per_day": None, "slots": [], "basis": None, "warnings": []}
     text_value = clean(use_method)
     if text_value is None:
@@ -186,6 +219,10 @@ def suggest_one(use_method, base_times):
     warnings = []
     if is_range:
         warnings.append(f"횟수가 범위로 적혀 있어 작은 값({count}회)으로 제안했어요. 확인해 주세요.")
+
+    note = age_warning(text_value, age_range)  # 나이별 용법 확인 (손채은 10/7)
+    if note:
+        warnings.append(note)
 
     relation, note = read_meal_relation(text_value)  # 규칙 5, 6
     if note:
@@ -225,6 +262,24 @@ def suggest_one(use_method, base_times):
     }
 
 
+def years_since(born, today):
+    """만 나이. 생일이 안 지났으면 한 살 적다."""
+    years = today.year - born.year
+    return years - ((today.month, today.day) < (born.month, born.day))
+
+
+def user_age_range(user):
+    """오늘 기준 만 나이를 (가장 적은 나이, 가장 많은 나이)로. 생년월일을 알면 두 값이 같다."""
+    if user.birth_date is None and user.birth_year is None:
+        return None
+    today = dt.date.today()
+    if user.birth_date is not None:
+        earliest = latest = user.birth_date
+    else:  # 태어난 해만 알면 1월 1일생~12월 31일생 사이
+        earliest, latest = dt.date(user.birth_year, 1, 1), dt.date(user.birth_year, 12, 31)
+    return years_since(latest, today), years_since(earliest, today)
+
+
 @router.post("/schedules/suggest", response_model=SuggestResult)
 def suggest_schedules(
     body: SuggestRequest | None = None,
@@ -234,6 +289,7 @@ def suggest_schedules(
     """내 약의 용법 문장을 읽어 복용 시각을 제안한다. 저장은 하지 않는다.
     user_drug_ids를 빼면 내 약 전체, base_times를 빼면 기본 시각을 쓴다."""
     base_times = {**BASE_TIMES, **((body.base_times if body else None) or {})}
+    age_range = user_age_range(user)
 
     stmt = select(UserDrug).where(UserDrug.user_id == user.id).order_by(UserDrug.id)
     if body is not None and body.user_drug_ids is not None:
@@ -244,7 +300,7 @@ def suggest_schedules(
     suggestions = []
     for ud in my_drugs:
         drug = DRUG_BY_SEQ.get(ud.item_seq) or {}
-        result = suggest_one(drug.get("use_method"), base_times)
+        result = suggest_one(drug.get("use_method"), base_times, age_range)
         suggestions.append({
             "user_drug_id": ud.id,
             "item_seq": ud.item_seq,
@@ -267,6 +323,7 @@ def suggest_schedules(
     return {
         "suggestions": suggestions,
         "base_times": base_times,
+        "age_known": age_range is not None,
         "dur_findings": dur_findings,
         "notes": notes,
     }

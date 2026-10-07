@@ -196,6 +196,18 @@ s, b = call("POST", "/dur/check", {}, token_a)
 check("태어난 해가 있으면 age_unknown=false", lambda: s == 200 and b["age_unknown"] is False, s)
 s, b = call("PUT", "/me/profile", {"birth_year": 1800}, token_a)
 check("말이 안 되는 해(1800) → 422", lambda: s == 422, s)
+s, b = call("PUT", "/me/profile", {"birth_date": "1958-03-15"}, token_a)
+check("생년월일 저장 → 태어난 해도 같이 맞춤", lambda: s == 200 and b["birth_date"] == "1958-03-15" and b["birth_year"] == 1958, (s, b))
+s, b = call("GET", "/me/profile", token=token_a)
+check("프로필에 생년월일이 남아 있음", lambda: s == 200 and b["birth_date"] == "1958-03-15", (s, b))
+s, b = call("PUT", "/me/profile", {"birth_date": "2030-01-01"}, token_a)
+check("미래 생년월일 → 422", lambda: s == 422, s)
+s, b = call("PUT", "/me/profile", {"birth_date": "1958-3-15"}, token_a)
+check("날짜 형식 오류(1958-3-15) → 422", lambda: s == 422, s)
+s, b = call("PUT", "/me/profile", {"birth_year": 1970}, token_a)
+check("태어난 해만 바꾸면 어긋난 생년월일은 지워짐", lambda: s == 200 and b["birth_year"] == 1970 and b["birth_date"] is None, (s, b))
+s, b = call("PUT", "/me/profile", {"birth_date": None, "birth_year": None}, token_a)
+check("둘 다 비우기", lambda: s == 200 and b["birth_year"] is None and b["birth_date"] is None, (s, b))
 
 # ---------- 9. 삭제와 정리 ----------
 print("[9] 삭제와 정리")
@@ -238,9 +250,23 @@ check("5세 사용자 + 12세 미만 금기 약 → 연령금기", ok, (s, b.get
 call("PUT", "/me/profile", {"birth_year": 1960}, token_a)
 s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
 check("성인 사용자 → 연령금기 없음", lambda: s == 200 and not any(f["type"] == "AGE" for f in b["findings"]), s)
-call("PUT", "/me/profile", {"birth_year": None}, token_a)
+call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
 s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
 check("태어난 해 없음 → age_unknown, 연령금기 판단 안 함", lambda: s == 200 and b["age_unknown"] is True and not any(f["type"] == "AGE" for f in b["findings"]), s)
+# 생년월일을 알면 생일에 따라 갈리는 경계도 정확히 판단한다
+born = f"{this_year - 12}-12-01"  # 아직 12번째 생일 전
+call("PUT", "/me/profile", {"birth_date": born}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
+age_notes = [f["condition_note"] or "" for f in b.get("findings", []) if f["type"] == "AGE"] if isinstance(b, dict) else []
+ok = lambda: (
+    s == 200 and b["age_unknown"] is False and b["drugs"][0]["verdict"] == "CONTRAINDICATED"
+    and age_notes and all("생일에 따라" not in n for n in age_notes)
+)
+check("생년월일이 있으면 '생일에 따라' 안내 없이 확정", ok, (s, age_notes))
+call("PUT", "/me/profile", {"birth_year": this_year - 12, "birth_date": None}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [AGE_DRUG]}, token_a)
+age_notes = [f["condition_note"] or "" for f in b.get("findings", []) if f["type"] == "AGE"] if isinstance(b, dict) else []
+check("태어난 해만 알면 '생일에 따라' 안내가 붙음", lambda: s == 200 and any("생일에 따라" in n for n in age_notes), (s, age_notes))
 
 # ---------- 12. 임부금기·용량주의 참고 정보 (김서현 DB 3차 백업 이후) ----------
 print("[12] 임부금기·용량주의 (cautions)")
@@ -255,6 +281,26 @@ ok = lambda: s == 200 and any(c["type"] == "PREGNANCY" and c["grade"] == "2등�
 check("샤젠캡슐 → 임부금기 2등급 (findings에는 안 들어감)", ok, s)
 s, b = call("POST", "/dur/check", {"item_seqs": ["200003488"]}, token_a)
 check("기준 확인 중인 임부금기도 빠지지 않음", lambda: s == 200 and any(c["status"] == "PENDING" for c in b["cautions"]), s)
+
+# ---------- 12-1. 노인주의·효능군중복주의·투여기간주의 (김서현 DB 10/6 검토본) ----------
+print("[12-1] 노인주의·효능군중복·투여기간")
+s, b = call("POST", "/dur/check", {"item_seqs": ["196000011"]}, token_a)  # 페니라민정
+cautions = b.get("cautions", []) if isinstance(b, dict) else []
+eld = [c for c in cautions if c["type"] == "ELDERLY"]
+ok = lambda: s == 200 and eld and eld[0]["status"] == "CONFIRMED" and eld[0]["info"].get("성분") and b["drugs"][0]["verdict"] == "NO_KNOWN_ISSUE"
+check("페니라민정 → 노인주의, 판정은 그대로", ok, (s, eld))
+check("노인주의는 원문에 주의 내용이 없어 빈 줄을 넣지 않음", lambda: eld and "주의 내용" not in eld[0]["info"], eld[0]["info"] if eld else None)
+dup = [c for c in cautions if c["type"] == "DUPLICATE"]
+check("효능군중복 → 효능군·계열을 따로 돌려줌", lambda: dup and dup[0]["info"].get("효능군") and dup[0]["info"].get("계열"), dup[0]["info"] if dup else None)
+check("효능군이 같다고 중복으로 단정하지 않는다는 안내", lambda: any("따로 확인" in n for n in b["notes"]), b.get("notes"))
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)  # 비사코딜, 7일
+dur_c = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstance(b, dict) else []
+check("투여기간 → 기간 원문 그대로 (7일)", lambda: dur_c and dur_c[0]["info"].get("기간 기준") == "7일", dur_c[0]["info"] if dur_c else None)
+s, b = call("POST", "/dur/check", {"item_seqs": ["200200414"]}, token_a)  # linked·pending 둘 다
+states = {c["status"] for c in b.get("cautions", []) if c["type"] == "DURATION"} if isinstance(b, dict) else set()
+check("한 약에 linked와 pending이 같이 있으면 둘 다 남김", lambda: states == {"CONFIRMED", "PENDING"}, states)
+s, b = call("POST", "/dur/check", {"item_seqs": ["196000011"]}, token_a)
+check("새 3종도 판정(verdict)은 바꾸지 않음", lambda: s == 200 and b["drugs"][0]["verdict"] != "CONTRAINDICATED", s)
 
 # ---------- 13. 자동 복용 시간표 제안 ----------
 print("[13] 자동 시간표 제안")
@@ -285,6 +331,23 @@ s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [999999]}, token_
 check("남의(없는) 약 번호 → 빈 제안", lambda: s == 200 and b["suggestions"] == [], (s, b))
 s, b = call("POST", "/me/schedules/suggest", None, token_b)
 check("다른 사용자는 내 제안이 안 보임", lambda: s == 200 and b["suggestions"] == [], (s, b))
+# 나이별 용법이 있으면 나이에 맞는지 확인을 요청한다 (손채은 10/7 제안)
+call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
+s, b = call("POST", "/me/schedules/suggest", None, token_a)
+check("나이를 모르면 age_known=false", lambda: s == 200 and b["age_known"] is False, s)
+call("POST", "/me/drugs", {"item_seq": "195700020"}, token_a)  # 활명수, 나이별 용량
+s, b = call("POST", "/me/schedules/suggest", None, token_a)
+hwal = [x for x in b.get("suggestions", []) if x["item_seq"] == "195700020"] if isinstance(b, dict) else []
+check("나이 모름 + 나이별 용법 → 생년월일 안내", lambda: hwal and any("생년월일" in w for w in hwal[0]["warnings"]), hwal[0]["warnings"] if hwal else None)
+call("PUT", "/me/profile", {"birth_date": "1990-05-05"}, token_a)
+s, b = call("POST", "/me/schedules/suggest", None, token_a)
+hwal = [x for x in b.get("suggestions", []) if x["item_seq"] == "195700020"] if isinstance(b, dict) else []
+ok = lambda: s == 200 and b["age_known"] is True and hwal and hwal[0]["confidence"] == "CONFIRM" and any("본인 나이" in w for w in hwal[0]["warnings"])
+check("나이 알아도 구간이 여러 개면 확인 필요", ok, (s, hwal[0]["warnings"] if hwal else None))
+s, b = call("GET", "/me/drugs", token=token_a)
+hwal_id = [x["id"] for x in b if x["item_seq"] == "195700020"][0] if isinstance(b, list) else None
+call("DELETE", f"/me/drugs/{hwal_id}", token=token_a)
+call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
 s, b = call("DELETE", f"/me/drugs/{sug_drug}", token=token_a)
 check("제안 점검용 약 정리 → 204", lambda: s == 204, s)
 

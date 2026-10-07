@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import models  # noqa: F401  (표 정의를 불러오는 용도)
@@ -53,6 +54,9 @@ app.include_router(dur_router)
 # 서버용 표(users, user_drugs, schedules, intake_logs)가 없으면 만들고,
 # 데모 계정(앱 목업과 같은 값)을 준비한다. 김서현 님 표는 건드리지 않는다.
 Base.metadata.create_all(engine)
+# 예전에 만들어진 users 표에는 birth_date 칸이 없다. create_all은 칸을 더해 주지 않으므로 직접 더한다.
+with engine.begin() as _conn:
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE"))
 with SessionLocal() as _db:
     create_user(_db, "demo@pillflow.app", "1234")
 

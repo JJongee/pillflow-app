@@ -13,6 +13,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     birth_year: Mapped[int | None] = mapped_column(default=None)
+    # 생년월일을 알면 연령금기를 정확히 판단한다. 모르면 birth_year로 범위를 잡는다.
+    birth_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 

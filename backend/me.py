@@ -1,5 +1,7 @@
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -112,12 +114,30 @@ def delete_my_drug(
 # ---------- 프로필 (연령금기 판별용) ----------
 
 class Profile(BaseModel):
+    """birth_date(생년월일)를 넣으면 연령금기를 정확히 판단한다.
+    birth_year(태어난 해)만 넣으면 생일에 따라 갈리는 경우를 '해당될 수 있음'으로 경고한다."""
+
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
+    birth_date: dt.date | None = None
+
+    @field_validator("birth_date")
+    @classmethod
+    def check_birth_date(cls, value):
+        if value is not None and not (dt.date(1900, 1, 1) <= value <= dt.date.today()):
+            raise ValueError("생년월일은 1900-01-01부터 오늘까지여야 해요.")
+        return value
+
+
+def profile_out(user: User):
+    return {
+        "birth_year": user.birth_year,
+        "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+    }
 
 
 @router.get("/profile", response_model=Profile)
 def get_profile(user: User = Depends(get_current_user)):
-    return {"birth_year": user.birth_year}
+    return profile_out(user)
 
 
 @router.put("/profile", response_model=Profile)
@@ -126,6 +146,16 @@ def put_profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user.birth_year = body.birth_year
+    """보낸 칸만 바뀐다. 생년월일을 넣으면 태어난 해도 같이 맞춘다."""
+    sent = body.model_dump(exclude_unset=True)
+    if "birth_date" in sent:
+        user.birth_date = body.birth_date
+        if body.birth_date is not None:
+            user.birth_year = body.birth_date.year
+    if "birth_year" in sent:
+        user.birth_year = body.birth_year
+        # 해를 바꿨는데 저장된 생년월일과 어긋나면, 오래된 생년월일을 지운다
+        if user.birth_date is not None and user.birth_date.year != body.birth_year:
+            user.birth_date = None
     db.commit()
-    return {"birth_year": user.birth_year}
+    return profile_out(user)

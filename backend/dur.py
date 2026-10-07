@@ -14,6 +14,7 @@
 앱은 findings의 AGE 외 type을 모두 병용금기로 보여 주므로, 이 정보는 findings가 아니라 cautions에만 넣는다.
 """
 
+import calendar
 import datetime as dt
 import json
 import re
@@ -66,10 +67,13 @@ AGE_PENDING_SQL = text(
     "SELECT item_seq, prohibition_reason, remark FROM v_dur_age_pending WHERE item_seq IN :seqs"
 ).bindparams(bindparam("seqs", expanding=True))
 
-# 임부금기·용량주의 뷰가 있는 DB인지
+# 주의 항목 뷰가 있는 DB인지 (예전 백업에는 없다)
 CAUTION_READY_SQL = text(
     "SELECT to_regclass('public.v_app_pregnancy_warnings') IS NOT NULL, "
-    "to_regclass('public.v_app_dose_warnings') IS NOT NULL"
+    "to_regclass('public.v_app_dose_warnings') IS NOT NULL, "
+    "to_regclass('public.v_app_elderly_warnings') IS NOT NULL, "
+    "to_regclass('public.v_app_duplicate_warnings') IS NOT NULL, "
+    "to_regclass('public.v_app_duration_warnings') IS NOT NULL"
 )
 
 PREGNANCY_SQL = text(
@@ -92,13 +96,47 @@ DOSE_SQL = text(
     """
 ).bindparams(bindparam("seqs", expanding=True))
 
+# 노인주의·효능군중복주의·투여기간주의 (김서현 10/6 전달). 뷰에 성분명·공고일이 바로 들어 있다.
+ELDERLY_SQL = text(
+    """
+    SELECT item_seq, ingredient_name, prohibition_reason, remark, notification_date, form_name,
+           elderly_link_status AS status, linked_rules
+    FROM v_app_elderly_warnings WHERE item_seq IN :seqs
+    """
+).bindparams(bindparam("seqs", expanding=True))
+
+DUPLICATE_SQL = text(
+    """
+    SELECT item_seq, ingredient_name, prohibition_reason, remark, notification_date,
+           duplicate_link_status AS status, linked_rules, effect_name, series_name
+    FROM v_app_duplicate_warnings WHERE item_seq IN :seqs
+    """
+).bindparams(bindparam("seqs", expanding=True))
+
+DURATION_SQL = text(
+    """
+    SELECT item_seq, ingredient_name, prohibition_reason, remark, notification_date, form_name,
+           duration_link_status AS status, linked_rules
+    FROM v_app_duration_warnings WHERE item_seq IN :seqs
+    """
+).bindparams(bindparam("seqs", expanding=True))
+
 STATUS = {"linked": "CONFIRMED", "pending": "PENDING", "conflict": "CONFLICT"}
+NOTE_ELDERLY = "고령이면 용량·부작용에 더 주의해야 해요. 의사·약사와 상담하세요."
+NOTE_ELDERLY_PENDING = "노인주의 기준을 확인 중이에요. 고령이라면 의사·약사와 상담하세요."
+NOTE_DUPLICATE = "같은 효능군의 약을 함께 먹고 있지 않은지 의사·약사와 확인하세요."
+NOTE_DUPLICATE_PENDING = "효능군 기준을 확인 중이에요. 비슷한 약을 함께 먹고 있다면 의사·약사와 상담하세요."
+NOTE_DURATION = "정해진 기간을 넘겨 복용하지 말고, 더 오래 먹어야 하면 의사·약사와 상담하세요."
+NOTE_DURATION_PENDING = "최대 투여기간 기준을 확인 중이에요. 오래 복용 중이라면 의사·약사와 상담하세요."
+NOTE_DURATION_CONDITIONAL = "쓰는 경우에 따라 기간이 달라요. 용법 원문을 확인하세요."
 NOTE_PREG_PENDING = "임부금기 등급 기준을 확인 중이에요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_PREG_CONFLICT = "임부금기 기준이 서로 달라 등급을 정하지 못했어요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_DOSE_PENDING = "1일 최대 투여량 기준을 확인 중이에요. 정해진 용량을 넘기지 말고, 궁금하면 의사·약사와 상담하세요."
-NOTE_CAUTIONS = "임부금기·용량주의는 판정에 넣지 않고 cautions에 참고 정보로 알려 줘요. (임신 여부·복용량 입력 전)"
+NOTE_CAUTIONS = ("임부금기·용량주의·노인주의·효능군중복주의·투여기간주의는 판정에 넣지 않고 "
+                 "cautions에 참고 정보로 알려 줘요. 임신 여부·복용량·복용 시작일 입력이 있어야 판정할 수 있어요.")
+NOTE_DUPLICATE_SCOPE = "효능군은 약마다 따로 알려 줘요. 효능군이 같다고 바로 중복은 아니어서, 함께 먹어도 되는지는 따로 확인해야 해요."
 
-UNIT_DAYS = {"year": 365.25, "month": 30.4375, "week": 7}
+UNITS = ("year", "month", "week")
 RANK = {"NO_KNOWN_ISSUE": 0, "UNDETERMINED": 1, "CONTRAINDICATED": 2}
 NOTE_NOT_SAFE = "기록 없음(NO_KNOWN_ISSUE)은 '안전'이 아니라, 수집된 데이터에 금기 기록이 없다는 뜻이에요."
 NOTE_BOUNDARY = "태어난 해만으로 판단해서, 생일에 따라 해당되지 않을 수도 있어요."
@@ -131,6 +169,7 @@ class DurCaution(BaseModel):
     status: str  # CONFIRMED / PENDING(기준 확인 중) / CONFLICT(기준 충돌)
     grade: str | None  # 임부금기 등급 (1등급·2등급), 모르면 null
     detail: str
+    info: dict[str, str]  # 화면에 줄로 보여 줄 항목. 원문에 없는 칸은 아예 넣지 않는다
     condition_note: str | None
     notice_date: str | None
 
@@ -150,26 +189,42 @@ def unique_seqs(values):
     return list(dict.fromkeys(v.strip() for v in values if v and v.strip()))
 
 
-def age_match(birth_year, operator, value, unit, today):
-    """태어난 해로 나이 범위를 잡고 연령 기준에 해당하는지 본다.
-    'DEFINITE'(확실히 해당) / 'POSSIBLE'(생일에 따라 해당) / None(해당 안 됨)"""
-    if unit not in UNIT_DAYS or operator not in ("lt", "le", "gt", "ge"):
+def add_period(date, count, unit):
+    """날짜에 N년·N개월·N주를 더한다. 2월 29일처럼 같은 날이 없으면 그달의 마지막 날로 맞춘다."""
+    if unit == "week":
+        return date + dt.timedelta(weeks=count)
+    if unit == "month":
+        total = date.month - 1 + count
+        year, month = date.year + total // 12, total % 12 + 1
+    else:  # year
+        year, month = date.year + count, date.month
+    return dt.date(year, month, min(date.day, calendar.monthrange(year, month)[1]))
+
+
+def age_match(birth_year, operator, value, unit, today, birth_date=None):
+    """나이가 연령 기준에 해당하는지 본다. 날수 어림이 아니라 달력으로 계산한다.
+    'DEFINITE'(확실히 해당) / 'POSSIBLE'(생일에 따라 해당) / None(해당 안 됨)
+    생년월일을 알면 POSSIBLE이 나오지 않는다."""
+    if unit not in UNITS or operator not in ("lt", "le", "gt", "ge"):
         return None
-    oldest = (today - dt.date(birth_year, 1, 1)).days  # 1월 1일생이면 가장 많은 나이
-    youngest = (today - dt.date(birth_year, 12, 31)).days  # 12월 31일생이면 가장 적은 나이
     # 'N세 이하'는 'N+1세 미만', 'N세 초과'는 'N+1세 이상'과 같다
     if operator == "le":
         operator, value = "lt", value + 1
     elif operator == "gt":
         operator, value = "ge", value + 1
-    limit = value * UNIT_DAYS[unit]
-    if operator == "lt":
-        if oldest < limit:
+    if birth_date is not None:
+        earliest = latest = birth_date
+    else:  # 태어난 해만 알면 1월 1일생~12월 31일생 사이
+        earliest, latest = dt.date(birth_year, 1, 1), dt.date(birth_year, 12, 31)
+    oldest_reached = today >= add_period(earliest, value, unit)  # 가장 나이 많은 경우
+    youngest_reached = today >= add_period(latest, value, unit)  # 가장 나이 적은 경우
+    if operator == "ge":
+        if youngest_reached:
             return "DEFINITE"
-        return "POSSIBLE" if youngest < limit else None
-    if youngest >= limit:
+        return "POSSIBLE" if oldest_reached else None
+    if not oldest_reached:  # lt: 아직 그 나이가 안 됐으면 해당
         return "DEFINITE"
-    return "POSSIBLE" if oldest >= limit else None
+    return "POSSIBLE" if not youngest_reached else None
 
 
 def join_text(*parts):
@@ -187,12 +242,73 @@ def tidy_reason(value):
     return value or None
 
 
-def build_cautions(seqs, preg_rows=(), dose_rows=()):
-    """임부금기·용량주의 참고 정보. 판정에는 쓰지 않는다. 기준 확인 중인 기록도 빼지 않는다."""
+def info_of(**pairs):
+    """화면에 줄로 보여 줄 항목. 원문에 값이 없는 칸은 넣지 않는다 (빈 줄로 보이지 않게)."""
+    return {label: clean(value) for label, value in pairs.items() if clean(value)}
+
+
+def as_rules(value):
+    """linked_rules(jsonb)를 목록으로. 비었으면 빈 목록."""
+    if isinstance(value, str):
+        value = json.loads(value) if value.strip() else []
+    return list(value or [])
+
+
+def simple_caution(kind, row, rule, order):
+    """노인주의·효능군중복주의·투여기간주의 한 건을 만든다. 세 뷰의 칸 구성이 같아서 함께 처리한다.
+    김서현 명세: 주의 내용이 NULL이어도 경고를 빼거나 안전으로 표시하지 않는다.
+    기준이 여러 개면 하나를 고르지 않고 각각 돌려준다."""
+    s = row["item_seq"]
+    status = STATUS.get(row["status"], "PENDING")
+    rule = rule or {}
+    ingr = clean(rule.get("ingredient_name")) or clean(row["ingredient_name"])
+    reason = tidy_reason(rule.get("prohibition_reason")) or tidy_reason(row["prohibition_reason"])
+    extra = [rule.get("remark"), row["remark"]]
+
+    form = clean(rule.get("form_name")) or clean(row["form_name"]) if "form_name" in row else None
+    if kind == "ELDERLY":
+        head = "노인주의"
+        advice = NOTE_ELDERLY if status == "CONFIRMED" else NOTE_ELDERLY_PENDING
+        if ingr:
+            head += f" · {ingr}"
+        # 노인주의 원문에는 주의 내용·비고가 비어 있다 (김서현 DB 521건 전부). 없는 칸은 넣지 않는다.
+        info = info_of(**{"성분": ingr, "제형": form, "주의 내용": reason})
+    elif kind == "DUPLICATE":
+        effect = clean(rule.get("effect_name")) or clean(row["effect_name"])
+        series = clean(rule.get("series_name")) or clean(row["series_name"])
+        head = "효능군 중복주의" + (f" · {effect}" if effect else "")
+        advice = NOTE_DUPLICATE if status == "CONFIRMED" else NOTE_DUPLICATE_PENDING
+        info = info_of(**{"효능군": effect, "계열": series, "성분": ingr, "주의 내용": reason})
+    else:  # DURATION
+        raw = clean(rule.get("max_duration_raw"))
+        head = f"최대 투여기간 {raw}" if raw else "투여기간주의"
+        advice = NOTE_DURATION if status == "CONFIRMED" else NOTE_DURATION_PENDING
+        if rule.get("duration_parse_status") == "conditional_or_unparsed":
+            extra.insert(0, NOTE_DURATION_CONDITIONAL)
+        if ingr:
+            head += f" ({ingr})"
+        info = info_of(**{"기간 기준": raw, "성분": ingr, "제형": form, "주의 내용": reason})
+    if status != "CONFIRMED":
+        head += " · 기준 확인 중"
+    elif reason:
+        head += f" · {reason}"
+
+    notice = rule.get("notification_date") or row["notification_date"]
+    return (order, kind, s, ingr or "", head), {
+        "type": kind, "item_seqs": [s], "ingredients": [ingr] if ingr else [],
+        "status": status, "grade": None, "detail": head, "info": info,
+        "condition_note": join_text(*extra, advice),
+        "notice_date": norm_date(str(notice)) if notice else None,
+    }
+
+
+def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=()):
+    """임부금기·용량주의·노인주의·효능군중복주의·투여기간주의 참고 정보.
+    판정(verdict)에는 쓰지 않고, 기준 확인 중(pending)인 기록도 빼지 않는다."""
     items = {}
     order = {s: i for i, s in enumerate(seqs)}
 
-    for row in preg_rows:
+    for row in preg:
         s = row["item_seq"]
         status = STATUS.get(row["status"], "PENDING")
         grade = clean(row["grade_raw"]) if status == "CONFIRMED" else None
@@ -210,15 +326,14 @@ def build_cautions(seqs, preg_rows=(), dose_rows=()):
         items.setdefault(key, {
             "type": "PREGNANCY", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
             "status": status, "grade": grade, "detail": detail, "condition_note": note,
+            "info": info_of(**{"등급": grade, "성분": ingr, "금기 사유": reason}),
             "notice_date": norm_date(row["notification_date"]),
         })
 
-    for row in dose_rows:
+    for row in dose:
         s = row["item_seq"]
         status = STATUS.get(row["status"], "PENDING")
-        rules = row["linked_rules"] or []
-        if isinstance(rules, str):
-            rules = json.loads(rules)
+        rules = as_rules(row["linked_rules"])
         if status == "CONFIRMED" and rules:
             for rule in rules:
                 ingr = clean(rule.get("ingredient_name")) or clean(row["ingredient_name"])
@@ -230,6 +345,7 @@ def build_cautions(seqs, preg_rows=(), dose_rows=()):
                 items.setdefault(key, {
                     "type": "DOSE", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
                     "status": "CONFIRMED", "grade": None, "detail": detail, "condition_note": note,
+                    "info": info_of(**{"성분": ingr, "1일 최대량": qty, "제형": rule.get("form_name")}),
                     "notice_date": norm_date(row["notification_date"]),
                 })
         else:
@@ -240,14 +356,22 @@ def build_cautions(seqs, preg_rows=(), dose_rows=()):
             items.setdefault(key, {
                 "type": "DOSE", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
                 "status": "CONFLICT" if status == "CONFLICT" else "PENDING", "grade": None, "detail": detail,
+                "info": info_of(**{"성분": ingr, "주의 내용": reason}),
                 "condition_note": join_text(row["remark"], NOTE_DOSE_PENDING),
                 "notice_date": norm_date(row["notification_date"]),
             })
 
+    for kind, rows in (("ELDERLY", elderly), ("DUPLICATE", duplicate), ("DURATION", duration)):
+        for row in rows:
+            rules = as_rules(row["linked_rules"]) if STATUS.get(row["status"]) == "CONFIRMED" else []
+            for rule in rules or [None]:
+                key, item = simple_caution(kind, row, rule, order.get(row["item_seq"], 999))
+                items.setdefault(key, item)
+
     return [items[k] for k in sorted(items)]
 
 
-def build_result(seqs, fetched, rows, age_rows=(), pending_rows=(), birth_year=None, today=None):
+def build_result(seqs, fetched, rows, age_rows=(), pending_rows=(), birth_year=None, today=None, birth_date=None):
     """DB에서 읽은 기록으로 약별 판정과 금기 목록을 만든다. (DB 없이도 시험 가능한 순수 함수)"""
     today = today or dt.date.today()
     findings = {}
@@ -279,11 +403,13 @@ def build_result(seqs, fetched, rows, age_rows=(), pending_rows=(), birth_year=N
                 "notice_date": notice_date,
             }
 
-    # 2) 연령금기 (태어난 해가 있을 때만)
+    # 2) 연령금기 (태어난 해나 생년월일이 있을 때만)
     undetermined = set()
+    if birth_date is not None and birth_year is None:
+        birth_year = birth_date.year
     if birth_year is not None:
         for row in age_rows:
-            hit = age_match(birth_year, row["age_operator"], row["age_value"], row["age_unit"], today)
+            hit = age_match(birth_year, row["age_operator"], row["age_value"], row["age_unit"], today, birth_date)
             if hit is None:
                 continue
             s, base = row["item_seq"], clean(row["age_base"])
@@ -354,34 +480,40 @@ def dur_check(
         if age_ready:
             age_rows = db.execute(AGE_SQL, {"seqs": seqs}).mappings().all()
             pending_rows = db.execute(AGE_PENDING_SQL, {"seqs": seqs}).mappings().all()
-    preg_rows, dose_rows = [], []
-    preg_ready, dose_ready = db.execute(CAUTION_READY_SQL).one()
-    if seqs and preg_ready:
-        preg_rows = db.execute(PREGNANCY_SQL, {"seqs": seqs}).mappings().all()
-    if seqs and dose_ready:
-        dose_rows = db.execute(DOSE_SQL, {"seqs": seqs}).mappings().all()
+    caution_rows = {name: [] for name in ("preg", "dose", "elderly", "duplicate", "duration")}
+    ready = dict(zip(caution_rows, db.execute(CAUTION_READY_SQL).one()))
+    queries = {"preg": PREGNANCY_SQL, "dose": DOSE_SQL, "elderly": ELDERLY_SQL,
+               "duplicate": DUPLICATE_SQL, "duration": DURATION_SQL}
+    for name, sql in queries.items():
+        if seqs and ready[name]:  # 뷰가 없는 예전 백업이면 건너뛴다
+            caution_rows[name] = db.execute(sql, {"seqs": seqs}).mappings().all()
     if len(seqs) >= 2:
         rows = db.execute(PAIR_SQL, {"seqs_a": seqs, "seqs_b": seqs}).mappings().all()
 
-    drugs, findings = build_result(seqs, fetched, rows, age_rows, pending_rows, user.birth_year)
-    cautions = build_cautions(seqs, preg_rows, dose_rows)
+    drugs, findings = build_result(seqs, fetched, rows, age_rows, pending_rows, user.birth_year,
+                                   birth_date=user.birth_date)
+    cautions = build_cautions(seqs, **caution_rows)
 
     notes = []
     if age_ready:
         notes.append("병용금기와 연령금기를 판별해요.")
-        if user.birth_year is None and (age_rows or pending_rows):
-            notes.append("연령금기 기준이 있는 약이 있어요. 태어난 해를 입력하면 연령금기도 확인할 수 있어요.")
+        if user.birth_year is None and user.birth_date is None and (age_rows or pending_rows):
+            notes.append("연령금기 기준이 있는 약이 있어요. 생년월일을 입력하면 연령금기도 확인할 수 있어요.")
+        elif user.birth_date is None and any(f["type"] == "AGE" and f["condition_note"] and NOTE_BOUNDARY in f["condition_note"] for f in findings):
+            notes.append("태어난 해만 알고 있어요. 생년월일을 입력하면 더 정확히 판단할 수 있어요.")
     else:
         notes.append("현재 DB에는 연령금기 데이터가 없어 병용금기만 판별해요.")
-    if preg_ready or dose_ready:
+    if any(ready.values()):
         notes.append(NOTE_CAUTIONS)
+    if any(c["type"] == "DUPLICATE" for c in cautions):
+        notes.append(NOTE_DUPLICATE_SCOPE)
     notes.append(NOTE_NOT_SAFE)
 
     version = db.execute(VERSION_SQL).scalar()
     return {
         "data_version": f"DUR API 수집 {version.astimezone().date().isoformat()}" if version else None,
         "checked_at": dt.date.today().isoformat(),
-        "age_unknown": user.birth_year is None,
+        "age_unknown": user.birth_year is None and user.birth_date is None,
         "drugs": drugs,
         "findings": findings,
         "cautions": cautions,
