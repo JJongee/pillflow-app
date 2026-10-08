@@ -59,50 +59,117 @@ class IntakeScreen extends ConsumerWidget {
               const SizedBox(height: 8),
               LinearProgressIndicator(value: done / list.length, minHeight: 10, borderRadius: BorderRadius.circular(5)),
               const SizedBox(height: 16),
-              ...list.map((r) => Card(
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(children: [
-                          Text(r.time, style: t.titleLarge),
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(r.itemName, style: t.titleMedium?.copyWith(fontSize: 18))),
-                        ]),
-                        const SizedBox(height: 10),
-                        Row(children: [
-                          Expanded(
-                            child: r.status == IntakeStatus.taken
-                                ? FilledButton.icon(
-                                    style: FilledButton.styleFrom(backgroundColor: AppColors.ok),
-                                    onPressed: () => _set(context, ref, r, IntakeStatus.pending),
-                                    icon: const Icon(Icons.check),
-                                    label: const Text('먹었어요'),
-                                  )
-                                : OutlinedButton.icon(
-                                    onPressed: () => _set(context, ref, r, IntakeStatus.taken),
-                                    icon: const Icon(Icons.check_box_outline_blank),
-                                    label: const Text('먹었어요'),
-                                  ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton(
-                            onPressed: () => _set(
-                              context,
-                              ref,
-                              r,
-                              r.status == IntakeStatus.skipped ? IntakeStatus.pending : IntakeStatus.skipped,
-                            ),
-                            child: Text(r.status == IntakeStatus.skipped ? '건너뜀 취소' : '건너뛰기'),
-                          ),
-                        ]),
-                      ]),
-                    ),
+              // 같은 시간에 먹는 약은 카드 하나로 묶고, 약마다 따로 체크 (손채은 10/8 제안)
+              ..._byTime(list).entries.map((e) => _TimeCard(
+                    time: e.key,
+                    records: e.value,
+                    onSet: (r, st) => _set(context, ref, r, st),
                   )),
             ]);
           },
         ),
       ),
     );
+  }
+}
+
+/// 시간별로 묶기 (시간 순서대로)
+Map<String, List<IntakeRecord>> _byTime(List<IntakeRecord> list) {
+  final sorted = [...list]..sort((a, b) => a.time.compareTo(b.time));
+  final out = <String, List<IntakeRecord>>{};
+  for (final r in sorted) {
+    out.putIfAbsent(r.time, () => []).add(r);
+  }
+  return out;
+}
+
+/// 한 시간대 카드: 08:00 · 2/3 복용 → 약마다 [먹었어요] [건너뛰기]
+class _TimeCard extends StatelessWidget {
+  const _TimeCard({required this.time, required this.records, required this.onSet});
+  final String time;
+  final List<IntakeRecord> records;
+  final void Function(IntakeRecord, IntakeStatus) onSet;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final done = records.where((r) => r.status == IntakeStatus.taken).length;
+    final allDone = done == records.length;
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text(time, style: t.titleLarge),
+            const SizedBox(width: 10),
+            Text('약 ${records.length}개', style: t.bodyMedium),
+            const Spacer(),
+            Text(
+              allDone ? '모두 먹었어요' : '$done / ${records.length} 복용',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: allDone ? AppColors.ok : Toss.grey600,
+              ),
+            ),
+          ]),
+          for (final r in records) ...[
+            const Divider(height: 20),
+            _IntakeRow(record: r, onSet: onSet),
+          ],
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+  }
+}
+
+class _IntakeRow extends StatelessWidget {
+  const _IntakeRow({required this.record, required this.onSet});
+  final IntakeRecord record;
+  final void Function(IntakeRecord, IntakeStatus) onSet;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final r = record;
+    final taken = r.status == IntakeStatus.taken;
+    final skipped = r.status == IntakeStatus.skipped;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(
+          child: Text(
+            r.itemName,
+            style: t.titleMedium?.copyWith(fontSize: 17, color: skipped ? Toss.grey500 : null),
+          ),
+        ),
+        if (skipped) Text('건너뜀', style: t.bodySmall?.copyWith(fontSize: 14)),
+      ]),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(
+          child: taken
+              ? FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.ok, minimumSize: const Size(0, 48)),
+                  onPressed: () => onSet(r, IntakeStatus.pending),
+                  icon: const Icon(Icons.check),
+                  label: const Text('먹었어요'),
+                )
+              : OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+                  onPressed: () => onSet(r, IntakeStatus.taken),
+                  icon: const Icon(Icons.check_box_outline_blank),
+                  label: const Text('먹었어요'),
+                ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+          onPressed: () => onSet(r, skipped ? IntakeStatus.pending : IntakeStatus.skipped),
+          child: Text(skipped ? '건너뜀 취소' : '건너뛰기'),
+        ),
+      ]),
+    ]);
   }
 }

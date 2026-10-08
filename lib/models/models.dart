@@ -302,7 +302,7 @@ class DurFinding {
 
 /// 참고 정보(임부금기·용량주의 등)의 기준 상태
 enum CautionStatus {
-  confirmed('CONFIRMED', '기준 연결 확인'),
+  confirmed('CONFIRMED', '기준 확인됨'),
   pending('PENDING', '기준 확인 중'),
   conflict('CONFLICT', '기준이 서로 달라요');
 

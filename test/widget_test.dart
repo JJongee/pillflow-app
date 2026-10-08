@@ -82,7 +82,7 @@ void main() {
     expect(dup.label, '효능군중복주의');
     expect(dup.efficacyGroup, '해열진통제');
     expect(dup.series, '아세트아미노펜계');
-    expect(dup.status.label, '기준 연결 확인');
+    expect(dup.status.label, '기준 확인됨');
     expect(dup.hint, isNot(contains('중복 복용이에요')));
     final dur = DurCaution.fromJson({'type': 'DURATION', 'item_seqs': ['1'], 'period_text': '성인 5일, 소아 3일'});
     expect(dur.label, '투여기간주의');

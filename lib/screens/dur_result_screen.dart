@@ -61,7 +61,7 @@ class DurResultScreen extends ConsumerWidget {
               Text('참고 정보', style: t.titleMedium),
               const SizedBox(height: 4),
               Text(
-                '판정에는 들어가지 않는 내용이에요. \'기준 연결 확인\'은 이 약이 DUR 기준에 연결돼 있다는 뜻일 뿐, '
+                '판정에는 들어가지 않는 내용이에요. \'기준 확인됨\'은 이 약이 DUR 기준에 해당하는 약이라는 뜻일 뿐, '
                 '내가 주의 대상이라는 뜻도, 먹어도 된다는 뜻도 아니에요.',
                 style: t.bodySmall?.copyWith(fontSize: 14, height: 1.45),
               ),
@@ -212,7 +212,7 @@ Map<String, List<DurCaution>> _groupBySeqs(List<DurCaution> list) {
 
 /// 참고 정보: 약품 하나에 카드 하나, 유형별로 접기/펼치기
 ///   아나프로스정
-///     임부금기 · 기준 연결 확인  ⌄
+///     임부금기 · 기준 확인됨  ⌄
 ///     용량주의 · 기준 확인 중    ⌄
 /// 판정과 섞이지 않게 빨강 대신 주황, '기준 확인 중'은 눈에 띄게 표시
 class _CautionGroup extends StatelessWidget {

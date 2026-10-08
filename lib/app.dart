@@ -67,7 +67,15 @@ class _HomeShellState extends State<HomeShell> {
             child: MediaQuery.removePadding(
               context: context,
               removeTop: AppConfig.useMock,
-              child: IndexedStack(index: _index, children: _pages),
+              // 바깥 Scaffold가 이미 키보드만큼 줄여 주므로, 탭 안 Scaffold가 한 번 더 줄이지 않게
+              // (실기기에서 키보드를 열면 검색창이 사라지던 문제)
+              child: Builder(
+                builder: (context) => MediaQuery.removeViewInsets(
+                  context: context,
+                  removeBottom: true,
+                  child: IndexedStack(index: _index, children: _pages),
+                ),
+              ),
             ),
           ),
         ]),
