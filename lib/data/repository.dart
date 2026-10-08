@@ -41,7 +41,8 @@ abstract class PillRepository {
   Future<void> setIntake({required int scheduleId, required String date, required IntakeStatus status});
 
   // 5. 프로필
-  Future<int?> getBirthYear();
+  Future<Profile> getProfile();
+  Future<void> setBirthDate(DateTime date);
   Future<void> setBirthYear(int? year);
 
   // 6. DUR

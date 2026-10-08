@@ -147,4 +147,17 @@ void main() {
       throwsA(isA<RepoException>().having((e) => e.code, 'code', 'VALIDATION_ERROR')),
     );
   });
+
+  test('생년월일: 생일 전이면 만 나이로 계산해 연령금기 판단', () async {
+    final r = MockRepository();
+    await r.addMyDrug(geborin); // 15세 미만 금기
+    final now = DateTime.now();
+    // 15년 전 내일 태어남 → 아직 생일 전이라 만 14세 → 금기
+    await r.setBirthDate(DateTime(now.year - 15, now.month, now.day).add(const Duration(days: 1)));
+    expect((await r.checkDur()).findings.any((f) => f.type == FindingType.age), isTrue);
+    expect((await r.getProfile()).birthDate, isNotNull);
+    // 생일이 지났으면 만 15세 → 금기 아님
+    await r.setBirthDate(DateTime(now.year - 15, now.month, now.day).subtract(const Duration(days: 1)));
+    expect((await r.checkDur()).findings.any((f) => f.type == FindingType.age), isFalse);
+  });
 }

@@ -29,7 +29,7 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final birthYear = ref.watch(birthYearProvider).valueOrNull;
+    final profile = ref.watch(profileProvider).valueOrNull;
     final t = Theme.of(context).textTheme;
 
     Widget header(String s) => Padding(
@@ -43,10 +43,10 @@ class SettingsScreen extends ConsumerWidget {
         header('내 정보'),
         ListTile(
           leading: const Icon(Icons.cake_outlined),
-          title: const Text('태어난 해'),
-          subtitle: Text(birthYear == null ? '입력 안 함 · 연령금기를 확인하지 않아요' : '$birthYear년생'),
+          title: const Text('생년월일'),
+          subtitle: Text(profile?.display ?? '입력 안 함 · 연령금기를 확인하지 않아요'),
           trailing: const Icon(Icons.edit_outlined),
-          onTap: () => editBirthYear(context, ref, birthYear),
+          onTap: () => editBirthDate(context, ref, profile),
         ),
         header('데이터 출처'),
         const ListTile(

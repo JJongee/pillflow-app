@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/config.dart';
+import 'core/nav.dart';
 import 'core/theme.dart';
 import 'data/providers.dart';
 import 'screens/intake_screen.dart';
@@ -16,6 +17,7 @@ class PillFlowApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: '필플로우',
+        navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
         home: const AuthGate(),
@@ -28,7 +30,9 @@ class AuthGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      ref.watch(authTokenProvider) == null ? const LoginScreen() : const HomeShell();
+      ref.watch(authTokenProvider) == null
+          ? LoginScreen(initialError: ref.watch(authNoticeProvider))
+          : const HomeShell();
 }
 
 /// 하단 탭 4개: 오늘 · 약 찾기 · 내 약 · 시간표

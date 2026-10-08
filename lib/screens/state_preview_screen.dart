@@ -93,6 +93,8 @@ class StatePreviewScreen extends StatelessWidget {
         header('DUR 판정'),
         item(Icons.warning_amber_rounded, '금기 있음 + 참고 정보', '병용·연령금기 카드 + 임부금기(기준 확인 중)·용량주의',
             () => _openScreen(context, DurResultScreen(preview: _danger))),
+        item(Icons.layers_outlined, '참고 정보 5종 (예시)', '약품별 묶음 · 유형별 접기/펼치기',
+            () => _openScreen(context, DurResultScreen(preview: _stage2))),
         item(Icons.info_outline, '확인된 금기 기록 없음', '안전으로 보이지 않게 중립 색으로 표시',
             () => _openScreen(context, DurResultScreen(preview: _clean))),
         item(Icons.help_outline, '판정 불가 포함', 'DUR 데이터에 없는 약이 섞여 있을 때',
@@ -222,4 +224,38 @@ const _undetermined = DurCheckResult(
     DurDrugVerdict(itemSeq: 'B', itemName: '활명수', verdict: Verdict.undetermined),
   ],
   findings: [],
+);
+
+// 참고 정보 5종 · 약품별 묶음 확인용. 문구는 예시 (서버 info 형식: 받은 칸만 줄로 표시)
+const _stage2 = DurCheckResult(
+  dataVersion: '참고 정보 예시 (미리보기)',
+  checkedAt: '2026-10-08',
+  ageUnknown: false,
+  drugs: [
+    DurDrugVerdict(itemSeq: 'A', itemName: '예시약 A (나프록센나트륨)', verdict: Verdict.noKnownIssue),
+    DurDrugVerdict(itemSeq: 'B', itemName: '예시약 B', verdict: Verdict.noKnownIssue),
+  ],
+  findings: [],
+  cautions: [
+    DurCaution(
+      typeCode: 'PREGNANCY', itemSeqs: ['A'], ingredients: [], status: CautionStatus.confirmed, detail: '',
+      info: [InfoLine('등급', '2등급'), InfoLine('성분', '나프록센나트륨'), InfoLine('금기 사유', '예시 사유')],
+    ),
+    DurCaution(
+      typeCode: 'ELDERLY', itemSeqs: ['A'], ingredients: [], status: CautionStatus.confirmed, detail: '',
+      info: [InfoLine('성분', '나프록센나트륨'), InfoLine('제형', '정제')], // 노인주의는 주의 내용 없이 옴
+    ),
+    DurCaution(
+      typeCode: 'DOSE', itemSeqs: ['A'], ingredients: [], status: CautionStatus.pending, detail: '',
+      info: [InfoLine('성분', '나프록센나트륨'), InfoLine('1일 최대량', '예시 값'), InfoLine('제형', '정제')],
+    ),
+    DurCaution(
+      typeCode: 'DURATION', itemSeqs: ['A'], ingredients: [], status: CautionStatus.confirmed, detail: '',
+      info: [InfoLine('기간 기준', '원문 그대로 표시 (예시)'), InfoLine('성분', '나프록센나트륨')],
+    ),
+    DurCaution(
+      typeCode: 'DUPLICATE', itemSeqs: ['B'], ingredients: [], status: CautionStatus.confirmed, detail: '',
+      info: [InfoLine('효능군', '해열진통소염제 (예시)'), InfoLine('계열', '예시 계열'), InfoLine('성분', '예시 성분')],
+    ),
+  ],
 );

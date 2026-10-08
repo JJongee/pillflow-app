@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
+import '../core/nav.dart';
 import '../models/models.dart';
 import 'api_repository.dart';
 import 'mock_repository.dart';
@@ -10,10 +11,21 @@ import 'repository.dart';
 /// 지금은 메모리에만 있어서 앱을 다시 켜면 다시 로그인합니다(시연용으로 충분).
 final authTokenProvider = StateProvider<String?>((ref) => null);
 
+/// 로그인 화면에 띄울 안내 (예: 로그인 만료)
+final authNoticeProvider = StateProvider<String?>((ref) => null);
+
 final repositoryProvider = Provider<PillRepository>(
   (ref) => AppConfig.useMock
       ? MockRepository()
-      : ApiRepository(tokenProvider: () => ref.read(authTokenProvider)),
+      : ApiRepository(
+          tokenProvider: () => ref.read(authTokenProvider),
+          onUnauthorized: () {
+            if (ref.read(authTokenProvider) == null) return; // 로그인 시도 중의 401은 '비밀번호 틀림'
+            navigatorKey.currentState?.popUntil((r) => r.isFirst); // 열려 있던 화면 닫기
+            ref.read(authNoticeProvider.notifier).state = '로그인이 만료됐어요. 다시 로그인해 주세요.';
+            ref.read(authTokenProvider.notifier).state = null; // → AuthGate 가 로그인 화면으로
+          },
+        ),
 );
 
 final myDrugsProvider = FutureProvider.autoDispose<List<UserDrug>>(
@@ -32,8 +44,8 @@ final intakesProvider = FutureProvider.autoDispose.family<List<IntakeRecord>, St
   (ref, date) => ref.watch(repositoryProvider).getIntakes(date),
 );
 
-final birthYearProvider = FutureProvider.autoDispose<int?>(
-  (ref) => ref.watch(repositoryProvider).getBirthYear(),
+final profileProvider = FutureProvider.autoDispose<Profile>(
+  (ref) => ref.watch(repositoryProvider).getProfile(),
 );
 
 final durCheckProvider = FutureProvider.autoDispose<DurCheckResult>(

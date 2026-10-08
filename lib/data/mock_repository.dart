@@ -30,6 +30,7 @@ class MockRepository implements PillRepository {
   final Map<String, IntakeStatus> _intakes = {}; // key: '$scheduleId|$date'
   final Map<String, String> _recordedAt = {};
   int? _birthYear;
+  DateTime? _birthDate;
   int _nextId = 1;
 
   /// 실제 네트워크처럼 로딩 상태가 보이도록 약간 지연
@@ -257,10 +258,19 @@ class MockRepository implements PillRepository {
   }
 
   @override
-  Future<int?> getBirthYear() async => _birthYear;
+  Future<Profile> getProfile() async => Profile(birthYear: _birthYear, birthDate: _birthDate);
 
   @override
-  Future<void> setBirthYear(int? year) async => _birthYear = year;
+  Future<void> setBirthDate(DateTime date) async {
+    _birthDate = date;
+    _birthYear = date.year;
+  }
+
+  @override
+  Future<void> setBirthYear(int? year) async {
+    _birthYear = year;
+    _birthDate = null;
+  }
 
   /// 서버가 할 판별을 흉내냅니다. 규칙: 보고서 5.5
   /// - 데이터에 없는 약 → UNDETERMINED (안전으로 표시 금지)
@@ -288,7 +298,7 @@ class MockRepository implements PillRepository {
       }
     }
 
-    final age = _birthYear == null ? null : DateTime.now().year - _birthYear!;
+    final age = _ageNow();
     if (age != null) {
       for (final r in (_rules['age_rules'] as List).cast<Map<String, dynamic>>()) {
         final seq = r['item_seq'] as String;
@@ -388,10 +398,22 @@ class MockRepository implements PillRepository {
     return ScheduleSuggestResult(
       suggestions: out,
       durFindings: dur?.findings ?? const [],
+      ageKnown: _birthYear != null,
       notes: const [
         '제안일 뿐이에요. 복용 방법은 처방과 약 설명서를 먼저 따라 주세요.',
         '몇 정·몇 mL를 먹을지는 제안하지 않아요. 한 번에 먹는 양은 직접 입력해 주세요.',
       ],
     );
+  }
+
+  /// 생년월일이 있으면 만 나이, 태어난 해만 있으면 올해 기준 나이
+  int? _ageNow() {
+    final now = DateTime.now();
+    final d = _birthDate;
+    if (d != null) {
+      final hadBirthday = now.month > d.month || (now.month == d.month && now.day >= d.day);
+      return now.year - d.year - (hadBirthday ? 0 : 1);
+    }
+    return _birthYear == null ? null : now.year - _birthYear!;
   }
 }

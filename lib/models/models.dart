@@ -221,15 +221,27 @@ class DurDrugVerdict {
       );
 }
 
+/// 2단계 유형(서버 type 값 확정 전이라 비슷한 이름도 받아 둠)
+enum DurKind { pregnancy, dose, elderly, efficacyDuplicate, duration, other }
+
+DurKind durKindOf(String code) => switch (code) {
+      'PREGNANCY' => DurKind.pregnancy,
+      'DOSE' => DurKind.dose,
+      'ELDERLY' || 'SENIOR' || 'OLD_AGE' => DurKind.elderly,
+      'DUPLICATE' || 'EFFICACY_DUPLICATE' || 'EFFICACY' || 'THERAPEUTIC_DUPLICATE' => DurKind.efficacyDuplicate,
+      'DURATION' || 'PERIOD' => DurKind.duration,
+      _ => DurKind.other,
+    };
+
 /// DUR 유형 코드 → 화면 이름. 서버가 새 유형을 보내도 화면이 깨지지 않도록 모르는 코드는 'DUR 주의'로 표시합니다.
 String durTypeLabel(String code) => switch (code) {
       'COMBINATION' => '병용금기',
       'AGE' => '연령금기',
       'PREGNANCY' => '임부금기',
       'DOSE' => '용량주의',
-      'ELDERLY' => '노인주의',
-      'DUPLICATE' || 'EFFICACY_DUPLICATE' || 'EFFICACY' => '효능군중복 주의',
-      'DURATION' => '투여기간주의',
+      'ELDERLY' || 'SENIOR' || 'OLD_AGE' => '노인주의',
+      'DUPLICATE' || 'EFFICACY_DUPLICATE' || 'EFFICACY' || 'THERAPEUTIC_DUPLICATE' => '효능군중복주의',
+      'DURATION' || 'PERIOD' => '투여기간주의',
       _ => 'DUR 주의',
     };
 
@@ -290,7 +302,7 @@ class DurFinding {
 
 /// 참고 정보(임부금기·용량주의 등)의 기준 상태
 enum CautionStatus {
-  confirmed('CONFIRMED', '기준 확인됨'),
+  confirmed('CONFIRMED', '기준 연결 확인'),
   pending('PENDING', '기준 확인 중'),
   conflict('CONFLICT', '기준이 서로 달라요');
 
@@ -301,6 +313,40 @@ enum CautionStatus {
   /// 모르는 값은 '확인 중'으로 취급 (절대 '괜찮음'으로 보이지 않게)
   static CautionStatus fromCode(String? c) =>
       CautionStatus.values.firstWhere((e) => e.code == c, orElse: () => CautionStatus.pending);
+}
+
+/// 참고 정보 카드에 줄로 보여 줄 항목 (서버 cautions[].info). 서버는 값이 있는 칸만 보냄
+class InfoLine {
+  final String label;
+  final String value;
+  const InfoLine(this.label, this.value);
+
+  /// 형식이 바뀌어도 깨지지 않게 여러 모양을 받음:
+  ///  {"성분": "…", "제형": "…"} / [{"label": "성분", "value": "…"}] / [["성분", "…"]] / ["성분: …"]
+  static List<InfoLine> parse(dynamic raw) {
+    final out = <InfoLine>[];
+    void add(dynamic k, dynamic v) {
+      final key = _str(k);
+      final val = v is List ? _str(v.map((e) => e.toString()).join(', ')) : _str(v);
+      if (key != null && val != null) out.add(InfoLine(key, val));
+    }
+
+    if (raw is Map) {
+      raw.forEach(add);
+    } else if (raw is List) {
+      for (final e in raw) {
+        if (e is Map) {
+          add(e['label'] ?? e['name'] ?? e['key'] ?? e['title'], e['value'] ?? e['text']);
+        } else if (e is List && e.length >= 2) {
+          add(e[0], e[1]);
+        } else if (e is String && e.contains(':')) {
+          final i = e.indexOf(':');
+          add(e.substring(0, i), e.substring(i + 1));
+        }
+      }
+    }
+    return out;
+  }
 }
 
 /// DUR 참고 정보 (임부금기·용량주의). 판정(verdict)에는 들어가지 않습니다.
@@ -314,6 +360,16 @@ class DurCaution {
   final String? conditionNote;
   final String? noticeDate;
 
+  /// 효능군중복주의: 효능군·계열 (서버 필드 이름 확정 전)
+  final String? efficacyGroup;
+  final String? series;
+
+  /// 투여기간주의: 기간 기준 원문. 조건마다 다를 수 있어 숫자로 줄이지 않고 그대로 보여 줌
+  final String? periodText;
+
+  /// 서버가 정리해 준 표시용 줄 (있으면 이걸 우선 그림)
+  final List<InfoLine> info;
+
   const DurCaution({
     required this.typeCode,
     required this.itemSeqs,
@@ -323,16 +379,34 @@ class DurCaution {
     required this.detail,
     this.conditionNote,
     this.noticeDate,
+    this.efficacyGroup,
+    this.series,
+    this.periodText,
+    this.info = const [],
   });
 
   String get label => durTypeLabel(typeCode);
+  DurKind get kind => durKindOf(typeCode);
 
   /// 화면 보조 문구 (서버 문서 4-1 제안)
-  String get hint => switch (typeCode) {
-        'PREGNANCY' => '임신 중이라면 금기예요',
-        'DOSE' => '하루 최대량을 넘지 않게 주의하세요',
-        _ => '복용 전에 확인해 주세요',
+  /// 사용자에게 해당된다고 단정하지 않는 문구만 씀
+  String get hint => switch (kind) {
+        DurKind.pregnancy => '임신 중이라면 금기예요',
+        DurKind.dose => '하루 최대량을 넘지 않게 주의하세요',
+        DurKind.elderly => '고령자가 먹을 때 주의가 필요한 약으로 연결돼 있어요',
+        DurKind.efficacyDuplicate => '같은 효능군의 약이 함께 있어요. 실제 중복 복용인지는 약사와 확인해 주세요',
+        DurKind.duration => '오래 계속 먹을 때 주의가 필요한 약이에요. 기간 기준은 조건에 따라 달라요',
+        DurKind.other => '복용 전에 확인해 주세요',
       };
+
+  /// 서버 필드 이름이 정해지기 전이라 후보 이름을 차례로 확인
+  static String? _first(Map<String, dynamic> j, List<String> keys) {
+    for (final k in keys) {
+      final v = _str(j[k]);
+      if (v != null) return v;
+    }
+    return null;
+  }
 
   factory DurCaution.fromJson(Map<String, dynamic> j) => DurCaution(
         typeCode: (_str(j['type']) ?? '').toUpperCase(),
@@ -343,6 +417,22 @@ class DurCaution {
         detail: _str(j['detail']) ?? '',
         conditionNote: _str(j['condition_note']),
         noticeDate: _str(j['notice_date']),
+        efficacyGroup: _first(j, const ['efficacy_group', 'efficacy_class', 'group']),
+        series: _first(j, const ['series', 'drug_class', 'class_name']),
+        periodText: _first(j, const ['period_text', 'duration_text', 'period', 'duration']),
+        info: InfoLine.parse(j['info']),
+      );
+
+  /// findings 로 온 2단계 유형(노인주의 등)을 참고 정보로 옮길 때 사용.
+  /// 상태 정보가 없으므로 '기준 확인 중'으로 둠
+  factory DurCaution.fromFinding(DurFinding f) => DurCaution(
+        typeCode: f.code,
+        itemSeqs: f.itemSeqs,
+        ingredients: f.ingredients,
+        status: CautionStatus.pending,
+        detail: f.detail,
+        conditionNote: f.conditionNote,
+        noticeDate: f.noticeDate,
       );
 }
 
@@ -362,6 +452,16 @@ class DurCheckResult {
     required this.findings,
     this.cautions = const [],
   });
+
+  /// 판정에 들어가는 금기 (병용금기·연령금기)
+  List<DurFinding> get contraindications => findings.where((f) => f.type != FindingType.other).toList();
+
+  /// 화면의 '참고 정보': cautions + findings로 온 2단계 유형
+  /// (서버가 노인주의 등을 findings에 넣어도 금기(빨강)로 보이지 않게)
+  List<DurCaution> get allCautions => [
+        ...cautions,
+        ...findings.where((f) => f.type == FindingType.other).map(DurCaution.fromFinding),
+      ];
 
   factory DurCheckResult.fromJson(Map<String, dynamic> j) => DurCheckResult(
         dataVersion: _str(j['data_version']),
@@ -442,7 +542,15 @@ class ScheduleSuggestResult {
   final List<DurFinding> durFindings;
   final List<String> notes;
 
-  const ScheduleSuggestResult({required this.suggestions, this.durFindings = const [], this.notes = const []});
+  /// 프로필에 생년월일·태어난 해가 있는지 (null = 서버가 안 보냄)
+  final bool? ageKnown;
+
+  const ScheduleSuggestResult({
+    required this.suggestions,
+    this.durFindings = const [],
+    this.notes = const [],
+    this.ageKnown,
+  });
 
   factory ScheduleSuggestResult.fromJson(Map<String, dynamic> j) => ScheduleSuggestResult(
         suggestions: (j['suggestions'] as List? ?? const [])
@@ -452,8 +560,35 @@ class ScheduleSuggestResult {
             .map((e) => DurFinding.fromJson(e as Map<String, dynamic>))
             .toList(),
         notes: (j['notes'] as List? ?? const []).map((e) => e.toString()).toList(),
+        ageKnown: j['age_known'] is bool ? j['age_known'] as bool : null,
       );
 }
+
+/// 내 정보 (GET /me/profile). 생년월일이 있으면 그걸 우선 사용
+class Profile {
+  final int? birthYear;
+  final DateTime? birthDate;
+  const Profile({this.birthYear, this.birthDate});
+
+  bool get hasAge => birthYear != null || birthDate != null;
+
+  /// 화면 표시: 1958.03.15 / 1958년생 / null
+  String? get display {
+    final d = birthDate;
+    if (d != null) return '${d.year}.${_two(d.month)}.${_two(d.day)}';
+    return birthYear == null ? null : '$birthYear년생';
+  }
+
+  factory Profile.fromJson(Map<String, dynamic> j) => Profile(
+        birthYear: j['birth_year'] is int ? j['birth_year'] as int : int.tryParse('${j['birth_year']}'),
+        birthDate: DateTime.tryParse(_str(j['birth_date']) ?? ''),
+      );
+}
+
+String _two(int n) => n.toString().padLeft(2, '0');
+
+/// 서버 형식 YYYY-MM-DD
+String dateString(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
 
 class Paged<T> {
   final List<T> items;

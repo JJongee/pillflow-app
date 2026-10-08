@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../widgets/dialogs.dart';
+import '../widgets/dose_field.dart';
 import '../widgets/state_views.dart';
 
 /// 자동 시간표 제안 (POST /me/schedules/suggest)
@@ -69,6 +71,14 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
   static String _fmt(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+  /// 생년월일 입력 후 제안을 다시 받음 (선택한 내용은 새 제안으로 바뀜)
+  Future<void> _editBirth() async {
+    final profile = await ref.read(repositoryProvider).getProfile().catchError((_) => const Profile());
+    if (!mounted) return;
+    final saved = await editBirthDate(context, ref, profile);
+    if (saved && mounted) setState(() => _future = _load());
+  }
+
   int get _selectedCount => _slots.values.expand((l) => l).where((s) => s.selected).length;
 
   Future<void> _save() async {
@@ -124,9 +134,15 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
           }
           return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 120), children: [
             Text('약 설명서의 용법을 읽어 복용 시간을 제안했어요. 확인하고 저장할 시간만 골라 주세요.', style: t.bodyMedium),
-            if (r.durFindings.isNotEmpty) ...[
+            // 나이를 모르면 나이별 용법이 있는 약은 모두 '확인 필요'로 옴 → 입력을 권함
+            if (r.ageKnown == false) ...[
               const SizedBox(height: 12),
-              _DurBanner(count: r.durFindings.length),
+              _AgeBanner(onTap: _editBirth),
+            ],
+            // 금기(병용·연령)만 경고. 2단계 참고 유형은 여기서 금기로 세지 않음
+            if (r.durFindings.any((f) => f.type != FindingType.other)) ...[
+              const SizedBox(height: 12),
+              _DurBanner(count: r.durFindings.where((f) => f.type != FindingType.other).length),
             ],
             const SizedBox(height: 8),
             ...r.suggestions.map((s) => _SuggestionCard(
@@ -162,6 +178,36 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
       ),
     );
   }
+}
+
+/// 나이를 모를 때: 생년월일을 넣으면 바로 쓸 수 있는 제안이 늘어난다고 안내
+class _AgeBanner extends StatelessWidget {
+  const _AgeBanner({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Toss.blue50,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(children: [
+              const Icon(Icons.cake_outlined, color: Toss.blue),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  '생년월일을 입력하면 나이에 맞는 용법인지 더 정확히 안내할 수 있어요.',
+                  style: TextStyle(color: Toss.grey900, fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text('입력', style: TextStyle(color: Toss.blue, fontSize: 15, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ),
+      );
 }
 
 /// 금기 조합이 있을 때: 시간을 나눠도 해결되지 않음을 먼저 알림
@@ -261,10 +307,7 @@ class _SuggestionCard extends StatelessWidget {
           else ...[
             ...slots.map((slot) => _SlotRow(slot: slot, onChanged: onChanged, fmt: fmt)),
             const SizedBox(height: 8),
-            TextField(
-              controller: dose,
-              decoration: const InputDecoration(labelText: '한 번에 먹는 양 (예: 1정)', isDense: true),
-            ),
+            DoseField(controller: dose, dense: true),
           ],
         ]),
       ),

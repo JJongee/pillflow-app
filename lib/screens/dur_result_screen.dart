@@ -22,7 +22,7 @@ class DurResultScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final value = preview != null ? AsyncValue.data(preview!) : ref.watch(durCheckProvider);
-    final birthYear = ref.watch(birthYearProvider).valueOrNull;
+    final profile = ref.watch(profileProvider).valueOrNull;
     final t = Theme.of(context).textTheme;
 
     return Scaffold(
@@ -32,7 +32,9 @@ class DurResultScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(durCheckProvider),
         data: (r) {
           final names = {for (final d in r.drugs) d.itemSeq: d.itemName};
-          final hasDanger = r.findings.isNotEmpty;
+          final danger = r.contraindications;
+          final cautions = r.allCautions;
+          final hasDanger = danger.isNotEmpty;
           final undetermined = r.drugs.where((d) => d.verdict == Verdict.undetermined).length;
           return ListView(padding: const EdgeInsets.all(16), children: [
             _SummaryCard(hasDanger: hasDanger, undetermined: undetermined, total: r.drugs.length),
@@ -42,25 +44,33 @@ class DurResultScreen extends ConsumerWidget {
                 child: ListTile(
                   leading: const Icon(Icons.cake_outlined),
                   title: const Text('나이에 따른 금기는 확인하지 않았어요'),
-                  subtitle: const Text('태어난 해를 입력하면 함께 확인해요.'),
+                  subtitle: const Text('생년월일을 입력하면 함께 확인해요.'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => editBirthYear(context, ref, birthYear),
+                  onTap: () => editBirthDate(context, ref, profile),
                 ),
               ),
             if (hasDanger) ...[
               const SizedBox(height: 20),
               Text('주의가 필요한 조합', style: t.titleMedium),
               const SizedBox(height: 8),
-              ...r.findings.map((f) => _FindingCard(finding: f, names: names)),
+              ...danger.map((f) => _FindingCard(finding: f, names: names)),
               const _ConsultNotice(),
             ],
-            if (r.cautions.isNotEmpty) ...[
+            if (cautions.isNotEmpty) ...[
               const SizedBox(height: 20),
               Text('참고 정보', style: t.titleMedium),
               const SizedBox(height: 4),
-              Text('판정에는 들어가지 않지만 확인이 필요한 내용이에요.', style: t.bodySmall),
+              Text(
+                '판정에는 들어가지 않는 내용이에요. \'기준 연결 확인\'은 이 약이 DUR 기준에 연결돼 있다는 뜻일 뿐, '
+                '내가 주의 대상이라는 뜻도, 먹어도 된다는 뜻도 아니에요.',
+                style: t.bodySmall?.copyWith(fontSize: 14, height: 1.45),
+              ),
               const SizedBox(height: 8),
-              ...r.cautions.map((c) => _CautionCard(caution: c, names: names)),
+              // 약품별로 묶고, 유형은 한 줄씩 접어서 보여 줌 (손채은 10/8 제안)
+              ..._groupBySeqs(cautions).entries.map((e) => _CautionGroup(
+                    title: e.value.first.itemSeqs.map((x) => names[x] ?? x).join(', '),
+                    cautions: e.value,
+                  )),
             ],
             const SizedBox(height: 20),
             Text('약별 결과', style: t.titleMedium),
@@ -94,8 +104,8 @@ class DurResultScreen extends ConsumerWidget {
             ),
             if (!r.ageUnknown)
               TextButton(
-                onPressed: () => editBirthYear(context, ref, birthYear),
-                child: Text('태어난 해 변경 (${birthYear ?? '-'})'),
+                onPressed: () => editBirthDate(context, ref, profile),
+                child: Text('생년월일 변경 (${profile?.display ?? '-'})'),
               ),
           ]);
         },
@@ -191,58 +201,131 @@ class _FindingCard extends StatelessWidget {
   }
 }
 
-/// 참고 정보 카드 (임부금기·용량주의). 판정과 섞이지 않게 빨간색 대신 주황 계열,
-/// '기준 확인 중'이면 상태를 눈에 띄게 표시해 "괜찮음"으로 오해하지 않게 합니다.
-class _CautionCard extends StatelessWidget {
-  const _CautionCard({required this.caution, required this.names});
+/// 같은 약(또는 같은 약 묶음)에 붙은 참고 정보끼리 모음. 처음 나온 순서 유지
+Map<String, List<DurCaution>> _groupBySeqs(List<DurCaution> list) {
+  final out = <String, List<DurCaution>>{};
+  for (final c in list) {
+    out.putIfAbsent(c.itemSeqs.join('+'), () => []).add(c);
+  }
+  return out;
+}
+
+/// 참고 정보: 약품 하나에 카드 하나, 유형별로 접기/펼치기
+///   아나프로스정
+///     임부금기 · 기준 연결 확인  ⌄
+///     용량주의 · 기준 확인 중    ⌄
+/// 판정과 섞이지 않게 빨강 대신 주황, '기준 확인 중'은 눈에 띄게 표시
+class _CautionGroup extends StatelessWidget {
+  const _CautionGroup({required this.title, required this.cautions});
+  final String title;
+  final List<DurCaution> cautions;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final single = cautions.length == 1;
+    return Card(
+      color: AppColors.cautionBg,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text(title, style: t.titleMedium?.copyWith(fontSize: 18)),
+          ),
+          ...cautions.map((c) => Theme(
+                // ExpansionTile 위아래 구분선 없애기
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  initiallyExpanded: single, // 하나뿐이면 바로 펼쳐 둠
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                  childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                  expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                  iconColor: AppColors.caution,
+                  collapsedIconColor: AppColors.caution,
+                  title: _CautionTitle(caution: c),
+                  children: [_CautionBody(caution: c)],
+                ),
+              )),
+        ]),
+      ),
+    );
+  }
+}
+
+class _CautionTitle extends StatelessWidget {
+  const _CautionTitle({required this.caution});
   final DurCaution caution;
-  final Map<String, String> names;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = caution;
+    final statusColor = c.status == CautionStatus.confirmed ? AppColors.neutral : AppColors.caution;
+    return Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      Text(c.label, style: const TextStyle(color: AppColors.caution, fontWeight: FontWeight.w800, fontSize: 16)),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: statusColor.withAlpha(110)),
+        ),
+        child: Text(c.status.label, style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.w700)),
+      ),
+    ]);
+  }
+}
+
+class _CautionBody extends StatelessWidget {
+  const _CautionBody({required this.caution});
+  final DurCaution caution;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final c = caution;
-    final drugs = c.itemSeqs.map((s) => names[s] ?? s).join(', ');
-    final statusColor = c.status == CautionStatus.confirmed ? AppColors.neutral : AppColors.caution;
-    return Card(
-      color: AppColors.cautionBg,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.info_outline, color: AppColors.caution, size: 20),
-              const SizedBox(width: 6),
-              Text(c.label, style: const TextStyle(color: AppColors.caution, fontWeight: FontWeight.w800, fontSize: 16)),
-            ]),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: statusColor.withAlpha(110)),
-              ),
-              child: Text(c.status.label,
-                  style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.w700)),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          Text(drugs, style: t.titleMedium?.copyWith(fontSize: 18)),
-          const SizedBox(height: 2),
-          Text(c.hint, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-          _InfoRow('관련 성분', c.ingredients.isEmpty ? null : c.ingredients.join(', ')),
-          _InfoRow('내용', c.detail),
-          _InfoRow('추가 안내', c.conditionNote),
-          _InfoRow('고시일', c.noticeDate),
-          if (c.status != CautionStatus.confirmed) ...[
-            const SizedBox(height: 8),
-            Text('기준을 확인하는 중인 정보예요. 해당되지 않는다는 뜻이 아니니 약사와 상담해 주세요.',
-                style: t.bodySmall?.copyWith(color: AppColors.caution)),
-          ],
-        ]),
-      ),
-    );
+    final rows = <Widget>[];
+    if (c.info.isNotEmpty) {
+      // 서버가 정리해 준 줄을 그대로 (값이 있는 칸만 옴 → 빈 줄 없음)
+      rows.addAll(c.info.map((l) => _InfoRow(l.label, l.value)));
+      if (!c.info.any((l) => l.label == '추가 안내')) rows.add(_InfoRow('추가 안내', c.conditionNote));
+      if (!c.info.any((l) => l.label == '고시일')) rows.add(_InfoRow('고시일', c.noticeDate));
+    } else {
+      // info가 없는 예전 응답: 유형별로 보여 줄 줄만 다르고 형식은 같음
+      if (c.kind == DurKind.efficacyDuplicate) {
+        rows.add(_InfoRow('효능군', c.efficacyGroup));
+        rows.add(_InfoRow('계열', c.series));
+      }
+      if (c.kind == DurKind.duration) rows.add(_InfoRow('기간 기준', c.periodText));
+      rows.addAll([
+        _InfoRow('관련 성분', c.ingredients.isEmpty ? null : c.ingredients.join(', ')),
+        _InfoRow(c.kind == DurKind.elderly ? '주의 내용' : '내용', c.detail),
+        _InfoRow('추가 안내', c.conditionNote),
+        _InfoRow('고시일', c.noticeDate),
+      ]);
+    }
+    final empty = c.info.isEmpty &&
+        c.detail.trim().isEmpty &&
+        c.conditionNote == null &&
+        c.periodText == null &&
+        c.efficacyGroup == null &&
+        c.ingredients.isEmpty;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(c.hint, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+      ...rows,
+      // 정보가 비어 있어도 '괜찮음'으로 보이지 않게
+      if (empty) ...[
+        const SizedBox(height: 8),
+        Text('세부 내용이 아직 없어요. 해당되지 않는다는 뜻은 아니니 약사와 확인해 주세요.', style: t.bodyMedium),
+      ],
+      if (c.status != CautionStatus.confirmed) ...[
+        const SizedBox(height: 8),
+        Text('기준을 확인하는 중인 정보예요. 해당되지 않는다는 뜻이 아니니 약사와 상담해 주세요.',
+            style: t.bodySmall?.copyWith(color: AppColors.caution)),
+      ],
+    ]);
   }
 }
 

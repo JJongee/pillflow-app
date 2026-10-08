@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../widgets/dose_field.dart';
 import '../widgets/state_views.dart';
 import 'schedule_suggest_screen.dart';
 
@@ -224,7 +225,7 @@ class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
               .toList(),
         ),
         const SizedBox(height: 12),
-        TextField(controller: _dose, decoration: const InputDecoration(labelText: '한 번에 먹는 양')),
+        DoseField(controller: _dose),
         const SizedBox(height: 20),
         FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? '저장 중…' : '저장')),
       ]),

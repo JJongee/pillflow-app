@@ -40,6 +40,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     try {
       final token = await ref.read(repositoryProvider).login(_email.text.trim(), _pw.text);
+      ref.read(authNoticeProvider.notifier).state = null;
       ref.read(authTokenProvider.notifier).state = token; // → AuthGate 가 홈으로 전환
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());

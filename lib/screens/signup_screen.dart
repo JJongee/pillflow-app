@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
 import '../data/repository.dart';
+import '../models/models.dart';
+import '../widgets/dialogs.dart';
 
-/// 회원가입 (POST /auth/signup) → 바로 로그인 → 태어난 해 저장(선택)
+/// 회원가입 (POST /auth/signup) → 바로 로그인 → 생년월일 저장(선택)
 /// 서버 규칙: 이메일 형식, 비밀번호 4자 이상, 같은 이메일은 DUPLICATE
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -18,7 +20,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _email = TextEditingController();
   final _pw = TextEditingController();
   final _pw2 = TextEditingController();
-  final _year = TextEditingController();
+  final _birthText = TextEditingController();
+  DateTime? _birth;
   bool _loading = false;
   bool _hidePw = true;
   String? _error;
@@ -28,7 +31,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     _email.dispose();
     _pw.dispose();
     _pw2.dispose();
-    _year.dispose();
+    _birthText.dispose();
     super.dispose();
   }
 
@@ -38,12 +41,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) return '이메일 형식을 확인해 주세요.';
     if (_pw.text.length < 4) return '비밀번호는 4자 이상으로 입력해 주세요.';
     if (_pw.text != _pw2.text) return '비밀번호가 서로 달라요.';
-    final y = _year.text.trim();
-    if (y.isNotEmpty) {
-      final n = int.tryParse(y);
-      if (n == null || n < 1900 || n > DateTime.now().year) return '태어난 해를 다시 확인해 주세요.';
-    }
     return null;
+  }
+
+  Future<void> _pickBirth() async {
+    final d = await showDialog<DateTime>(context: context, builder: (_) => BirthDateDialog(initial: _birth));
+    if (d == null || !mounted) return;
+    setState(() {
+      _birth = d;
+      _birthText.text = Profile(birthDate: d).display ?? '';
+    });
   }
 
   Future<void> _submit() async {
@@ -62,19 +69,20 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final auth = ref.read(authTokenProvider.notifier);
     final navigator = Navigator.of(context);
     final email = _email.text.trim();
-    final year = int.tryParse(_year.text.trim());
+    final birth = _birth;
     try {
       await repo.signup(email, _pw.text);
       final token = await repo.login(email, _pw.text);
+      ref.read(authNoticeProvider.notifier).state = null;
       auth.state = token; // 이후 요청부터 토큰이 붙음
-      if (year != null) {
+      if (birth != null) {
         try {
-          await repo.setBirthYear(year);
+          await repo.setBirthDate(birth);
         } catch (_) {
-          // 태어난 해 저장 실패는 가입을 막지 않음 (설정에서 다시 입력 가능)
+          // 생년월일 저장 실패는 가입을 막지 않음 (설정에서 다시 입력 가능)
         }
       }
-      ref.invalidate(birthYearProvider);
+      ref.invalidate(profileProvider);
       navigator.popUntil((r) => r.isFirst); // 로그인 화면 위의 가입 화면 닫기 → 홈
     } on RepoException catch (e) {
       if (mounted) {
@@ -132,15 +140,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           ),
           const SizedBox(height: 14),
           TextField(
-            controller: _year,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _loading ? null : _submit(),
+            controller: _birthText,
+            readOnly: true,
+            onTap: _pickBirth,
             style: const TextStyle(fontSize: 18),
             decoration: const InputDecoration(
-              labelText: '태어난 해 (선택)',
-              hintText: '예: 1958',
+              labelText: '생년월일 (선택)',
+              hintText: '눌러서 입력',
               helperText: '나이에 따라 금기인 약을 확인할 때만 써요. 나중에 설정에서 입력해도 돼요.',
               helperMaxLines: 2,
               prefixIcon: Icon(Icons.cake_outlined),

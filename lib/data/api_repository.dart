@@ -7,7 +7,7 @@ import 'repository.dart';
 /// 실제 서버용 구현. 경로와 필드는 docs/api_contract.md 와 같습니다.
 /// 10/5 실제 API 연동 때 주연우 님 서버와 맞춰 보면서 고치면 됩니다.
 class ApiRepository implements PillRepository {
-  ApiRepository({Dio? dio, this.tokenProvider})
+  ApiRepository({Dio? dio, this.tokenProvider, this.onUnauthorized})
       : _dio = dio ??
             Dio(BaseOptions(
               baseUrl: AppConfig.apiBase,
@@ -26,11 +26,15 @@ class ApiRepository implements PillRepository {
   /// 인증이 붙으면 토큰을 돌려주는 함수를 넘기세요.
   final String? Function()? tokenProvider;
 
+  /// 로그인 상태에서 401이 오면(토큰 24시간 만료 등) 부름 → 로그인 화면으로
+  final void Function()? onUnauthorized;
+
   Future<T> _call<T>(Future<T> Function() f) async {
     try {
       return await f();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
+        onUnauthorized?.call();
         throw RepoException('로그인이 만료됐어요. 다시 로그인해 주세요.', code: 'UNAUTHORIZED');
       }
       final data = e.response?.data;
@@ -181,9 +185,15 @@ class ApiRepository implements PillRepository {
       });
 
   @override
-  Future<int?> getBirthYear() => _call(() async {
+  Future<Profile> getProfile() => _call(() async {
         final r = await _dio.get('/me/profile');
-        return (r.data as Map<String, dynamic>)['birth_year'] as int?;
+        return Profile.fromJson(r.data as Map<String, dynamic>);
+      });
+
+  @override
+  Future<void> setBirthDate(DateTime date) => _call(() async {
+        // 태어난 해도 같이 맞춰 둠 (서버는 보낸 칸만 바꿈)
+        await _dio.put('/me/profile', data: {'birth_date': dateString(date), 'birth_year': date.year});
       });
 
   @override

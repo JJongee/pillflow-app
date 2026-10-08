@@ -75,9 +75,22 @@ docs/api_contract.md           주연우 님과 합의할 API 초안
 - 병용금기는 시간을 나눠서 해결하지 않습니다. 경고를 보여주고 의사·약사 상담을 안내합니다.
 - 경고에는 고시번호, 고시일자, 조건(`비고`)을 함께 표시합니다.
 
-## 아직 안 한 것 / 다음 할 일
+## 시연 빌드 (APK)
 
-- [ ] 생년월일 입력 (서버에 birth_date 필드가 생기면 태어난 해 → 생년월일로 교체)
-- [ ] 1회 복용량 입력 화면 (1회량·단위·횟수, 서버 필드 확정 후)
-- [ ] 2단계 DUR: 노인주의·효능군중복·투여기간주의 (카드는 이미 공통 형식이라 유형 이름만 추가하면 됨)
+`C:\src\pillflow_app`에서 실행합니다. 결과물은 `build\app\outputs\flutter-apk\app-release.apk`입니다.
+
+- 서버용 (에뮬레이터에서 PC의 서버로 연결): `flutter build apk --release --dart-define=USE_MOCK=false`
+- 비상용 목업 (서버 없이 동작): `flutter build apk --release --dart-define=USE_MOCK=true`
+- 에뮬레이터에 설치: `flutter install --use-application-binary build\app\outputs\flutter-apk\app-release.apk`
+
+실기기에서 서버에 붙이려면 PC와 같은 와이파이에서 `--dart-define=API_BASE=http://PC의IP:8000/api/v1`을 함께 넣고, 서버는 `--host 0.0.0.0`으로 켭니다.
+
+시연 순서는 `docs/demo_scenario.md`에 있습니다.
+
+## 남은 이슈 / 후속 개발
+
+- [ ] 효능군중복주의: 지금은 약마다 효능군만 표시. 두 약을 비교한 "중복" 판정은 2단계 (서버 규칙 필요)
+- [ ] 임부금기·용량주의·투여기간주의를 판정에 넣으려면 임신 여부·복용량·복용 시작일 입력이 필요
+- [ ] 기준 시각(기상·식사·취침) 사용자 설정 — 서버 `base_times`는 준비됨, 앱 화면 미구현
+- [ ] 로그인 유지(앱을 다시 켜면 다시 로그인), 복용 알림, OCR — 계획서상 후속 개발
 - [ ] Pretendard 폰트 (선택)
