@@ -33,7 +33,7 @@ python -m uvicorn main:app --reload
 - 인증: `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`
 - 약: `GET /api/v1/drugs?q=`, `GET /api/v1/drugs/{item_seq}`
 - 내 약: `GET·POST /api/v1/me/drugs`, `PATCH·DELETE /api/v1/me/drugs/{id}`
-- 시간표: `GET·POST /api/v1/me/schedules`, `PATCH·DELETE /api/v1/me/schedules/{id}`
+- 시간표: `GET·POST /api/v1/me/schedules`, `PATCH·DELETE /api/v1/me/schedules/{id}` (1회 복용량은 `dose_amount` + `dose_unit`)
 - 복용 기록: `GET /api/v1/me/intakes?date=`, `PUT /api/v1/me/intakes`
 - 프로필: `GET·PUT /api/v1/me/profile` (`birth_year`, `birth_date`)
 - DUR: `POST /api/v1/dur/check` (body `{"item_seqs": [...]}`, 빼면 내 약 전체)

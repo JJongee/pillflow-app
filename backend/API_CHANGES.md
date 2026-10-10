@@ -1,6 +1,6 @@
 # API 계약 v0.2 → 실제 서버 차이 (v0.3 제안)
 
-> 작성: 주연우(서버) · 2026-10-09 · 기준: `docs/api_contract.md` v0.2, 서버 `backend/` (점검 99개 통과)
+> 작성: 주연우(서버) · 2026-10-10 · 기준: `docs/api_contract.md` v0.2, 서버 `backend/` (점검 108개 통과)
 > 고연수 님과 합의되면 `docs/api_contract.md`를 v0.3으로 고칩니다. 그 전까지는 이 문서가 서버의 실제 동작입니다.
 
 **요약**: 경로·필드 이름·코드값은 v0.2와 같습니다. 바뀐 건 아래 표의 항목뿐이고, 앱이 꼭 고쳐야 하는 건 없습니다.
@@ -12,6 +12,7 @@
 |---|---|
 | `POST /auth/signup` | 바디 `{"email", "password"}` → `201 {"id", "email"}`. 이메일은 소문자로 저장. 같은 이메일 `409 DUPLICATE`, 형식 오류·비밀번호 4자 미만 `422` |
 | `GET /auth/me` | 토큰 확인용. `{"id", "email"}` |
+| 시간표의 `dose_amount`·`dose_unit` | 1회 복용량을 숫자와 단위로 나눠 저장(10/10 추가). 기존 `dose_text`는 그대로 둠. 둘 다 생략·`null` 가능이라 지금 앱은 안 고쳐도 됨. **서버는 기록만 하고 용량 초과 판정은 하지 않음** |
 | `/me/profile`의 `birth_date` | 생년월일(10/6 추가, 앱 요청). 넣으면 연령금기를 정확히 판단하고 "생일에 따라 다를 수 있어요" 안내가 사라짐. `birth_year`만 써도 전처럼 동작 |
 | DUR 응답 `notes` | 안내 문구 목록. 앱은 무시해도 됨 |
 | `POST /me/schedules/suggest` | 자동 복용 시간표 **제안**(10/6 추가). v0.2에 없던 새 API. 저장은 기존 `POST /me/schedules`로 하므로 시간표 API는 바뀌지 않음 (아래 4-2) |
@@ -34,7 +35,8 @@
 |---|---|
 | 인증 | JSON `{"email","password"}` 방식 확정(form 아님). 토큰 24시간 |
 | 약 정보 | 김서현 DB(`drugs`, `drug_images`)에서 읽음. 날짜는 `2026.6.29` → `2026-06-29`로 정리 |
-| `PATCH /me/schedules/{id}` | 보낸 칸만 바뀜. `time`, `meal_relation`에 `null`을 보내면 무시, `dose_text`는 `null`로 지울 수 있음 |
+| `PATCH /me/schedules/{id}` | 보낸 칸만 바뀜. `time`, `meal_relation`에 `null`을 보내면 무시. `dose_text`·`dose_amount`·`dose_unit`은 `null`로 지울 수 있음 |
+| 1회 복용량 | `dose_amount`는 0보다 크고 1000 이하(소수점 셋째 자리까지, 0.5 가능). `dose_unit`은 앱 목록과 같은 6개(`정`·`캡슐`·`포`·`mL`·`방울`·`매`) 중 하나. 다른 값은 422. 목록에 없는 단위는 앱이 '직접 입력'으로 `dose_text`에만 넣음. 단위를 늘리려면 앱과 서버 `schedules.py`의 `DoseUnit`을 같이 고쳐야 함 |
 | `PUT /me/intakes` | `status`에 `PENDING`을 보내면 그 기록을 지움(체크 취소). 응답은 `IntakeRecord` 하나 |
 | `/me/profile` | `birth_year`(1900~2100)와 `birth_date`(`YYYY-MM-DD`, 1900-01-01~오늘). 둘 다 `null` 가능. 보낸 칸만 바뀜 |
 | 시간 형식 | `HH:mm` 두 자리만 (`8:30`은 422) |

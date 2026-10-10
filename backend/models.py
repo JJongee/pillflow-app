@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import Date, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Date, ForeignKey, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db import Base
@@ -40,7 +40,9 @@ class Schedule(Base):
     time: Mapped[str] = mapped_column(String(5))  # "08:30"
     meal_relation: Mapped[str] = mapped_column(String(10), default="NONE")
     dose_text: Mapped[str | None] = mapped_column(String(50), default=None)
-    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+    # 1회 복용량을 숫자와 단위로 나눠 둔다. 자동 용량 판정은 아직 하지 않고 기록만 한다.
+    dose_amount: Mapped[float | None] = mapped_column(Numeric(10, 3), default=None)
+    dose_unit: Mapped[str | None] = mapped_column(String(10), default=None)
 
 
 class IntakeLog(Base):

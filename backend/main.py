@@ -57,6 +57,8 @@ Base.metadata.create_all(engine)
 # 예전에 만들어진 users 표에는 birth_date 칸이 없다. create_all은 칸을 더해 주지 않으므로 직접 더한다.
 with engine.begin() as _conn:
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE"))
+    _conn.execute(text("ALTER TABLE schedules ADD COLUMN IF NOT EXISTS dose_amount NUMERIC(10,3)"))
+    _conn.execute(text("ALTER TABLE schedules ADD COLUMN IF NOT EXISTS dose_unit VARCHAR(10)"))
 with SessionLocal() as _db:
     create_user(_db, "demo@pillflow.app", "1234")
 

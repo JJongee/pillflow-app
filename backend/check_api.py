@@ -147,7 +147,27 @@ s, b = call("POST", "/me/schedules", {"user_drug_id": drug1, "time": "08:30", "m
 check("식사 관계 오류(LUNCH) → 422", lambda: s == 422, s)
 s, b = call("POST", "/me/schedules", {"user_drug_id": drug1, "time": "08:30", "meal_relation": "AFTER", "dose_text": "1포"}, token_a)
 check("시간표 추가 → 201", lambda: s == 201 and b["time"] == "08:30", (s, b))
-sched = b.get("id") if isinstance(b, dict) else None
+# 1회 복용량 숫자 + 단위 (고연수·손채은 요청, 10/10 추가). 서버는 기록만 하고 판정하지 않는다.
+sched0 = b.get("id") if isinstance(b, dict) else None
+check("복용량을 안 보내면 null", lambda: b.get("dose_amount") is None and b.get("dose_unit") is None, (b.get("dose_amount"), b.get("dose_unit")))
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": 1.5, "dose_unit": "정"}, token_a)
+check("복용량 숫자 + 단위 저장", lambda: s == 200 and b["dose_amount"] == 1.5 and b["dose_unit"] == "정", (s, b))
+s, b = call("GET", "/me/schedules", token=token_a)
+check("목록에도 복용량이 남아 있음", lambda: s == 200 and any(x["dose_amount"] == 1.5 for x in b), s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": None, "dose_unit": None}, token_a)
+check("복용량을 null로 지울 수 있음", lambda: s == 200 and b["dose_amount"] is None and b["dose_unit"] is None, (s, b))
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": 0}, token_a)
+check("복용량 0 → 422", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": -1}, token_a)
+check("복용량 음수 → 422", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_unit": "알"}, token_a)
+check("목록에 없는 단위 → 422 (앱은 직접 입력으로 dose_text에 넣음)", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_text": "반 봉지"}, token_a)
+check("목록에 없는 단위는 dose_text로는 들어감", lambda: s == 200 and b["dose_text"] == "반 봉지" and b["dose_unit"] is None, (s, b))
+s, b = call("POST", "/me/schedules", {"user_drug_id": drug1, "time": "21:00", "dose_amount": 0.5, "dose_unit": "mL"}, token_a)
+check("만들 때 바로 복용량 넣기 (0.5 mL)", lambda: s == 201 and b["dose_amount"] == 0.5 and b["dose_unit"] == "mL", (s, b))
+call("DELETE", f"/me/schedules/{b.get('id')}", token=token_a)  # 복용량 점검용은 정리
+sched = sched0  # 복용 기록은 맨 처음 만든 08:30 시간표로 본다
 today = time.strftime("%Y-%m-%d")
 s, b = call("GET", "/me/intakes", token=token_a, params={"date": today})
 check("오늘 복용 현황 → PENDING", lambda: s == 200 and len(b) == 1 and b[0]["status"] == "PENDING", s)
