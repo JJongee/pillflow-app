@@ -123,6 +123,9 @@ DURATION_SQL = text(
 
 STATUS = {"linked": "CONFIRMED", "pending": "PENDING", "conflict": "CONFLICT"}
 NOTE_ELDERLY = "고령이면 용량·부작용에 더 주의해야 해요. 의사·약사와 상담하세요."
+# 노인주의는 DUR 원본부터 주의 내용이 비어 있다 (김서현 10/9 확인, 앱 대상 521건 전부).
+# 빈 값을 '주의사항 없음'으로 보여 주면 안 되므로, 없다는 사실을 그대로 알려 준다.
+NOTE_NO_DETAIL = "원본에 상세 주의내용이 제공되지 않았어요."
 NOTE_ELDERLY_PENDING = "노인주의 기준을 확인 중이에요. 고령이라면 의사·약사와 상담하세요."
 NOTE_DUPLICATE = "같은 효능군의 약을 함께 먹고 있지 않은지 의사·약사와 확인하세요."
 NOTE_DUPLICATE_PENDING = "효능군 기준을 확인 중이에요. 비슷한 약을 함께 먹고 있다면 의사·약사와 상담하세요."
@@ -273,6 +276,8 @@ def simple_caution(kind, row, rule, order):
             head += f" · {ingr}"
         # 노인주의 원문에는 주의 내용·비고가 비어 있다 (김서현 DB 521건 전부). 없는 칸은 넣지 않는다.
         info = info_of(**{"성분": ingr, "제형": form, "주의 내용": reason})
+        if not reason:
+            extra.insert(0, NOTE_NO_DETAIL)
     elif kind == "DUPLICATE":
         effect = clean(rule.get("effect_name")) or clean(row["effect_name"])
         series = clean(rule.get("series_name")) or clean(row["series_name"])

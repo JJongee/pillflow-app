@@ -290,6 +290,7 @@ eld = [c for c in cautions if c["type"] == "ELDERLY"]
 ok = lambda: s == 200 and eld and eld[0]["status"] == "CONFIRMED" and eld[0]["info"].get("성분") and b["drugs"][0]["verdict"] == "NO_KNOWN_ISSUE"
 check("페니라민정 → 노인주의, 판정은 그대로", ok, (s, eld))
 check("노인주의는 원문에 주의 내용이 없어 빈 줄을 넣지 않음", lambda: eld and "주의 내용" not in eld[0]["info"], eld[0]["info"] if eld else None)
+check("대신 '원본에 상세 주의내용이 제공되지 않았어요'로 알림", lambda: eld and "원본에 상세 주의내용이 제공되지 않았어요" in (eld[0]["condition_note"] or ""), eld[0]["condition_note"] if eld else None)
 dup = [c for c in cautions if c["type"] == "DUPLICATE"]
 check("효능군중복 → 효능군·계열을 따로 돌려줌", lambda: dup and dup[0]["info"].get("효능군") and dup[0]["info"].get("계열"), dup[0]["info"] if dup else None)
 check("효능군이 같다고 중복으로 단정하지 않는다는 안내", lambda: any("따로 확인" in n for n in b["notes"]), b.get("notes"))
@@ -347,6 +348,20 @@ check("나이 알아도 구간이 여러 개면 확인 필요", ok, (s, hwal[0][
 s, b = call("GET", "/me/drugs", token=token_a)
 hwal_id = [x["id"] for x in b if x["item_seq"] == "195700020"][0] if isinstance(b, list) else None
 call("DELETE", f"/me/drugs/{hwal_id}", token=token_a)
+# '성인' 기준만 적힌 용법도 나이가 안 맞으면 확인 필요 (손채은 10/9 검수)
+call("POST", "/me/drugs", {"item_seq": "197000037"}, token_a)  # 아로나민골드정, 성인 1일 2회
+s, b = call("GET", "/me/drugs", token=token_a)
+adult_id = [x["id"] for x in b if x["item_seq"] == "197000037"][0] if isinstance(b, list) else None
+# 숫자 없이 '성인'이라고만 적힌 용법은 나이를 알든 모르든 적용 가능한지 알 수 없다 (김서현 10/9)
+for label, profile in [("성인", {"birth_date": "1990-05-05"}),
+                       (f"{int(time.strftime('%Y')) - 7}년생", {"birth_date": f"{int(time.strftime('%Y')) - 7}-01-01"}),
+                       ("나이 모름", {"birth_year": None, "birth_date": None})]:
+    call("PUT", "/me/profile", profile, token_a)
+    s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [adult_id]}, token_a)
+    one = b["suggestions"][0] if isinstance(b, dict) and b.get("suggestions") else {}
+    ok = lambda: s == 200 and one.get("confidence") == "CONFIRM" and any("성인 기준 용법" in w for w in one.get("warnings", []))
+    check(f"성인 기준 용법 + 사용자 {label} → 확인 필요", ok, (s, one.get("confidence"), one.get("warnings")))
+call("DELETE", f"/me/drugs/{adult_id}", token=token_a)
 call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
 s, b = call("DELETE", f"/me/drugs/{sug_drug}", token=token_a)
 check("제안 점검용 약 정리 → 204", lambda: s == 204, s)

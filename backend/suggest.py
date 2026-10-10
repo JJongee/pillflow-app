@@ -53,9 +53,11 @@ AS_NEEDED = r"필요시|필요할\s*때|필요에\s*따라"
 # 나이에 따라 용법이 달라지는 문장 (손채은 10/7 제안). 서버는 나이에 맞는 용량을 고르지 않는다.
 AGE_NUMBER = r"만?\s*(\d+)\s*(?:세|개월)"
 AGE_GROUP = r"소아|영아|유아|고령자|노인"
+AGE_ADULT = r"성인|어른"  # 나이 숫자 없이 '성인' 기준만 적힌 용법 (손채은·김서현 10/9)
 AGE_MIN = r"만?\s*(\d+)\s*세\s*이상"
 NOTE_AGE_UNKNOWN = "나이에 따라 먹는 양이 달라요. 생년월일을 입력하면 더 정확히 안내할 수 있어요."
 NOTE_AGE_CHECK = "나이에 따라 먹는 양이 달라요. 본인 나이에 맞는 내용인지 용법 원문을 확인해 주세요."
+NOTE_AGE_ADULT = "성인 기준 용법이에요. 사용자 연령에 적용 가능한지 확인해 주세요."
 BEDTIME_CUE = r"취침|자기\s*전|잠자기\s*전|잘\s*때"
 
 SHIFT = {"BEFORE": -30, "AFTER": 30, "EMPTY": 120, "NONE": 0}  # 분
@@ -178,8 +180,13 @@ def age_warning(text_value, age_range):
     나이 구분이 없거나, 나이를 알고 그 구간에 들어가면 경고하지 않는다."""
     ages = sorted({int(m) for m in re.findall(AGE_NUMBER, text_value)})
     group = bool(re.search(AGE_GROUP, text_value))
-    if not ages and not group:
+    adult = bool(re.search(AGE_ADULT, text_value))
+    if not ages and not group and not adult:
         return None
+    # 숫자 없이 '성인'이라고만 적힌 용법은 적용 가능한지 알 수 없다.
+    # '성인'을 임의의 숫자 나이로 바꾸지 않는다. (김서현 10/9)
+    if adult and not ages and not group:
+        return NOTE_AGE_ADULT
     if age_range is None:
         return NOTE_AGE_UNKNOWN
     limits = read_age_limits(text_value)
