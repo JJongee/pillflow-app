@@ -363,6 +363,8 @@ ok = lambda: preg and preg[0]["applies"] == "NO" and "남성" in (preg[0]["appli
 check("남성이면 임신 중이어도 해당 안 됨(NO)", ok, (preg[0]["applies"], preg[0]["applies_note"]) if preg else None)
 check("DUR 응답에 sex·subject가 같이 온다",
       lambda: b.get("sex") == "MALE" and b.get("subject") == "OTHER", (b.get("sex"), b.get("subject")))
+check("남성에게는 임신 여부를 입력하라고 하지 않는다",
+      lambda: not any("임신 여부" in n for n in b.get("notes", [])), b.get("notes"))
 s, b = call("PUT", "/me/profile", {"sex": "FEMALE"}, token_a)
 s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
 preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []

@@ -3,7 +3,7 @@
 > v0.2 작성: 고연수(앱) · v0.3 정리: 주연우(서버) · 2026-10-11
 > v0.3은 **지금 돌아가는 서버의 실제 동작**입니다. 10/11 고연수 합의로 `backend/API_CHANGES.md` 내용을 여기에 반영했습니다.
 > 앱의 `lib/data/api_repository.dart`와 서버 `backend/`가 이 문서를 따릅니다. 바뀌면 셋 다 고칩니다.
-> 서버 점검은 `backend/check_api.py` 132개로 확인합니다.
+> 서버 점검은 `backend/check_api.py` 133개로 확인합니다.
 
 ## 공통 규칙
 

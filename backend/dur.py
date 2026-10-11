@@ -161,8 +161,9 @@ NOTE_DURATION_CONDITIONAL = "쓰는 경우에 따라 기간이 달라요. 용법
 NOTE_PREG_PENDING = "임부금기 등급 기준을 확인 중이에요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_PREG_CONFLICT = "임부금기 기준이 서로 달라 등급을 정하지 못했어요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_DOSE_PENDING = "1일 최대 투여량 기준을 확인 중이에요. 정해진 용량을 넘기지 말고, 궁금하면 의사·약사와 상담하세요."
-NOTE_CAUTIONS = ("임부금기·용량주의·노인주의·효능군중복주의·투여기간주의는 판정에 넣지 않고 "
-                 "cautions에 참고 정보로 알려 줘요. 임신 여부·복용량·복용 시작일 입력이 있어야 판정할 수 있어요.")
+# 임부금기·투여기간은 10/11부터 applies로 판정한다. 다만 금기 판정(verdict)에는 여전히 넣지 않는다.
+NOTE_CAUTIONS = ("임부금기·용량주의·노인주의·효능군중복주의·투여기간주의는 cautions에 참고 정보로 알려 줘요. "
+                 "금기 판정(verdict)에는 넣지 않아요.")
 NOTE_DUPLICATE_SCOPE = "효능군은 약마다 따로 알려 줘요. 효능군이 같다고 바로 중복은 아니어서, 함께 먹어도 되는지는 따로 확인해야 해요."
 
 UNITS = ("year", "month", "week")
@@ -618,8 +619,15 @@ def dur_check(
         notes.append(NOTE_CAUTIONS)
     if any(c["type"] == "DUPLICATE" for c in cautions):
         notes.append(NOTE_DUPLICATE_SCOPE)
-    if any(c["applies"] == "UNKNOWN" for c in cautions):
+    # 실제로 비어 있는 입력만 권한다. 남성이면 임신 여부는 권하지 않는다. (고연수 10/11)
+    need_preg = any(c["type"] == "PREGNANCY" and c["applies"] == "UNKNOWN" for c in cautions)
+    need_period = any(c["type"] == "DURATION" and c["applies"] == "UNKNOWN" for c in cautions)
+    if need_preg and need_period:
         notes.append("임신 여부나 복용 시작일을 입력하면 해당되는지까지 알려 드릴 수 있어요.")
+    elif need_preg:
+        notes.append("임신 여부를 입력하면 해당되는지까지 알려 드릴 수 있어요.")
+    elif need_period:
+        notes.append("복용 시작일을 입력하면 해당되는지까지 알려 드릴 수 있어요.")
     notes.append(NOTE_NOT_SAFE)
 
     version = db.execute(VERSION_SQL).scalar()
