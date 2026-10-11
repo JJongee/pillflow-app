@@ -145,6 +145,9 @@ NOTE_PREG_PENDING_APPLY = "임신 중이라고 하셨는데, 이 약의 임부�
 NOTE_PREG_NOT = "임신 중이 아니라고 하셨어요. 그래도 참고로 보여 드려요."
 NOTE_PREG_UNKNOWN = "임신 여부를 입력하면 해당되는지 알려 드릴 수 있어요."
 NOTE_DURATION_OVER = "복용한 기간이 {days}일로 기준({limit}일)을 넘었어요. 의사·약사와 상담하세요."
+# 종료일이 없으면 아직 먹는 중인지 알 수 없다. 기간이 길어도 확정하지 않는다. (손채은 10/11)
+NOTE_DURATION_MAYBE = ("시작일부터 오늘까지 {days}일이고 기준은 {limit}일이에요. "
+                       "복용을 이미 멈췄다면 해당되지 않을 수 있어요. 종료일을 입력하거나 의사·약사와 확인해 주세요.")
 NOTE_DURATION_WITHIN = "복용한 기간은 {days}일로 기준({limit}일) 안이에요."
 NOTE_DURATION_CHECK = "기간 기준이 숫자로 확정되지 않아 비교하지 못했어요. 원문을 확인해 주세요."
 NOTE_DURATION_UNKNOWN = "복용 시작일을 입력하면 기간을 비교해 드릴 수 있어요."
@@ -361,7 +364,8 @@ def taken_days(period, today):
 
 def judge_duration(status, rules, period, today):
     """복용 기간과 DUR 투여기간 기준을 비교한다. (applies, 안내)
-    시작일이 없거나 기준이 숫자로 확정되지 않았으면 판정하지 않는다."""
+    시작일이 없거나 기준이 숫자로 확정되지 않았으면 판정하지 않는다.
+    종료일이 없으면 지금도 먹는 중인지 알 수 없어서, 기간이 길어도 확정하지 않는다."""
     days = taken_days(period, today)
     if days is None:
         return "UNKNOWN", NOTE_DURATION_UNKNOWN
@@ -370,9 +374,11 @@ def judge_duration(status, rules, period, today):
     if status != "CONFIRMED" or not limits:
         return "CHECK", NOTE_DURATION_CHECK
     limit = min(int(x) for x in limits)  # 기준이 여러 개면 짧은 쪽으로 본다
-    if days > limit:
-        return "YES", NOTE_DURATION_OVER.format(days=days, limit=limit)
-    return "NO", NOTE_DURATION_WITHIN.format(days=days, limit=limit)
+    if days <= limit:
+        return "NO", NOTE_DURATION_WITHIN.format(days=days, limit=limit)
+    if (period or (None, None))[1] is None:  # 종료일을 모른다
+        return "CHECK", NOTE_DURATION_MAYBE.format(days=days, limit=limit)
+    return "YES", NOTE_DURATION_OVER.format(days=days, limit=limit)
 
 
 def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=(),
