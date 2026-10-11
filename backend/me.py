@@ -1,5 +1,7 @@
 import datetime as dt
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -12,13 +14,22 @@ from models import User, UserDrug
 router = APIRouter(prefix="/api/v1/me", tags=["me"])
 
 
+# 임신 여부. 민감한 정보라 선택 입력이고, 안 고르면 UNKNOWN이다. (손채은 10/11)
+Pregnancy = Literal["PREGNANT", "NOT_PREGNANT", "UNKNOWN"]
+
+
 class UserDrugCreate(BaseModel):
     item_seq: str = Field(min_length=1, max_length=30)
     memo: str | None = Field(default=None, max_length=200)
+    # 복용 시작일·종료일. 투여기간주의를 보려면 시작일이 있어야 한다.
+    started_on: dt.date | None = None
+    ended_on: dt.date | None = None
 
 
 class UserDrugUpdate(BaseModel):
     memo: str | None = Field(default=None, max_length=200)
+    started_on: dt.date | None = None
+    ended_on: dt.date | None = None
 
 
 class UserDrugOut(BaseModel):
@@ -28,6 +39,8 @@ class UserDrugOut(BaseModel):
     entp_name: str | None
     image_url: str | None
     memo: str | None
+    started_on: str | None
+    ended_on: str | None
     created_at: str
 
 
@@ -47,6 +60,8 @@ def to_out(ud: UserDrug):
         "entp_name": d.get("entp_name"),
         "image_url": d.get("image_url"),
         "memo": ud.memo,
+        "started_on": ud.started_on.isoformat() if ud.started_on else None,
+        "ended_on": ud.ended_on.isoformat() if ud.ended_on else None,
         "created_at": ud.created_at.date().isoformat(),
     }
 
@@ -78,7 +93,8 @@ def add_my_drug(
     )
     if exists:
         raise HTTPException(status_code=409, detail="이미 등록한 약이에요.")
-    ud = UserDrug(user_id=user.id, item_seq=body.item_seq, memo=body.memo)
+    ud = UserDrug(user_id=user.id, item_seq=body.item_seq, memo=body.memo,
+                  started_on=body.started_on, ended_on=body.ended_on)
     db.add(ud)
     db.commit()
     db.refresh(ud)
@@ -93,7 +109,10 @@ def update_my_drug(
     db: Session = Depends(get_db),
 ):
     ud = get_own_drug(db, user, drug_id)
-    ud.memo = body.memo
+    for key, value in body.model_dump(exclude_unset=True).items():
+        setattr(ud, key, value)  # 보낸 칸만 바뀌고, null로 지울 수 있다
+    if ud.started_on and ud.ended_on and ud.ended_on < ud.started_on:
+        raise HTTPException(status_code=422, detail="복용 종료일이 시작일보다 빠를 수 없어요.")
     db.commit()
     db.refresh(ud)
     return to_out(ud)
@@ -119,6 +138,7 @@ class Profile(BaseModel):
 
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
     birth_date: dt.date | None = None
+    pregnancy: Pregnancy = "UNKNOWN"
 
     @field_validator("birth_date")
     @classmethod
@@ -132,6 +152,7 @@ def profile_out(user: User):
     return {
         "birth_year": user.birth_year,
         "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+        "pregnancy": user.pregnancy or "UNKNOWN",
     }
 
 
@@ -152,6 +173,8 @@ def put_profile(
         user.birth_date = body.birth_date
         if body.birth_date is not None:
             user.birth_year = body.birth_date.year
+    if "pregnancy" in sent:
+        user.pregnancy = body.pregnancy
     if "birth_year" in sent:
         user.birth_year = body.birth_year
         # 해를 바꿨는데 저장된 생년월일과 어긋나면, 오래된 생년월일을 지운다

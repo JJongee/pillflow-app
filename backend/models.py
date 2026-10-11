@@ -15,6 +15,9 @@ class User(Base):
     birth_year: Mapped[int | None] = mapped_column(default=None)
     # 생년월일을 알면 연령금기를 정확히 판단한다. 모르면 birth_year로 범위를 잡는다.
     birth_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    # 임신 여부. 민감한 정보라 선택 입력이고, 안 고르면 'UNKNOWN'으로 둔다. (손채은 10/11)
+    # NOT_PREGNANT가 12글자라 넉넉히 잡는다
+    pregnancy: Mapped[str] = mapped_column(String(20), default="UNKNOWN", server_default="UNKNOWN")
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 
@@ -26,6 +29,9 @@ class UserDrug(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     item_seq: Mapped[str] = mapped_column(String(30))
     memo: Mapped[str | None] = mapped_column(String(200), default=None)
+    # 복용 시작일·종료일. 투여기간주의를 보려면 시작일이 있어야 한다. 둘 다 선택 입력.
+    started_on: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    ended_on: Mapped[dt.date | None] = mapped_column(Date, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 
