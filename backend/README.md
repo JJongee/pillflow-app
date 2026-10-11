@@ -30,21 +30,23 @@ python -m uvicorn main:app --reload
 - 앱(에뮬레이터)은 `flutter run --dart-define=USE_MOCK=false`로 이 서버에 붙습니다.
 - `drugs 표를 찾을 수 없어요` 오류가 나면 DB 복원이 안 됐거나 `.env`의 DB 이름이 다른 것입니다.
 
-## API (api_contract v0.2)
+## API (api_contract v0.3)
 - 인증: `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`
 - 약: `GET /api/v1/drugs?q=`, `GET /api/v1/drugs/{item_seq}`
 - 내 약: `GET·POST /api/v1/me/drugs`, `PATCH·DELETE /api/v1/me/drugs/{id}`
 - 시간표: `GET·POST /api/v1/me/schedules`, `PATCH·DELETE /api/v1/me/schedules/{id}` (1회 복용량은 `dose_amount` + `dose_unit`)
 - 복용 기록: `GET /api/v1/me/intakes?date=`, `PUT /api/v1/me/intakes`
-- 프로필: `GET·PUT /api/v1/me/profile` (`birth_year`, `birth_date`, `pregnancy`)
+- 프로필: `GET·PUT /api/v1/me/profile` (`birth_year`, `birth_date`, `pregnancy`, `subject`, `sex`)
 - DUR: `POST /api/v1/dur/check` (body `{"item_seqs": [...]}`, 빼면 내 약 전체)
 - 자동 시간표 제안: `POST /api/v1/me/schedules/suggest` (바디 전부 생략 가능, 저장은 하지 않음)
 
 ## DUR 판별 기준
 - **병용금기 + 연령금기**를 판별합니다.
-- **임부금기·용량주의·노인주의·효능군중복주의·투여기간주의**는 응답의 `cautions`에 약별 참고 정보로 줍니다. 판정(`verdict`)에는 넣지 않습니다. 임신 여부·복용량·복용 시작일 입력이 있어야 판정할 수 있고, 노인주의는 기준에 나이 값이 없으며, 효능군은 같다고 바로 중복이 아니기 때문입니다.
+- **임부금기·용량주의·노인주의·효능군중복주의·투여기간주의**는 응답의 `cautions`에 약별 참고 정보로 줍니다. 금기 판정(`verdict`)에는 넣지 않습니다.
+  나머지 3종은 해당 여부도 판정하지 않습니다. 용량주의는 최대량이 아직 글자이고, 노인주의는 기준에 나이 값이 없으며, 효능군은 같다고 바로 중복이 아니기 때문입니다.
 - 기준 확인 중(`PENDING`)인 기록도 빼지 않고 "기준 확인 중"으로 보여 줍니다. **"해당 없음"이 아닙니다.**
-- 임신 여부와 복용 시작일을 입력하면 **임부금기·투여기간주의가 해당되는지**를 `applies`로 알려 줍니다. 데이터 연결 상태(`status`)와는 다른 칸입니다. 조건이 불명확하면 확정하지 않고 "확인 필요"로 둡니다.
+- 임신 여부·성별과 복용 시작일을 입력하면 **임부금기·투여기간주의가 해당되는지**를 `applies`로 알려 줍니다. 데이터 연결 상태(`status`)와는 다른 칸입니다. 조건이 불명확하면 확정하지 않고 "확인 필요"로 둡니다.
+  성별이 `MALE`이면 임부금기는 임신 여부를 묻지 않고 `NO`로 둡니다.
 - 연령금기는 프로필의 생년월일(`birth_date`)로 판단합니다. 달력으로 계산해서 생일 당일도 정확합니다.
 - 생년월일 없이 태어난 해(`birth_year`)만 있으면, 생일에 따라 해당 여부가 갈리는 경우도 금기로 경고하고 `condition_note`에 그 사실을 적습니다.
 - 둘 다 없으면 연령금기를 판단하지 않고 `age_unknown: true`를 돌려줍니다.
