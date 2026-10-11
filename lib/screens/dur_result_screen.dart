@@ -201,6 +201,20 @@ class _FindingCard extends StatelessWidget {
   }
 }
 
+const multiStandardNotice = '동일 성분의 제형·농도별 참고정보이며, 현재 약품에 적용되는 기준으로 확정된 것은 아닙니다.';
+
+/// 한 약에 같은 유형이 2건 이상이고 전부 '기준 확인 중'인 유형 (예: 사노바겔 용량주의 3건)
+List<String> _multiPendingTypes(List<DurCaution> list) {
+  final byType = <String, List<DurCaution>>{};
+  for (final c in list) {
+    byType.putIfAbsent(c.typeCode, () => []).add(c);
+  }
+  return [
+    for (final e in byType.entries)
+      if (e.value.length >= 2 && e.value.every((c) => c.status != CautionStatus.confirmed)) e.key,
+  ];
+}
+
 /// 같은 약(또는 같은 약 묶음)에 붙은 참고 정보끼리 모음. 처음 나온 순서 유지
 Map<String, List<DurCaution>> _groupBySeqs(List<DurCaution> list) {
   final out = <String, List<DurCaution>>{};
@@ -224,6 +238,15 @@ class _CautionGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final single = cautions.length == 1;
+    // 유형별로 모으기 (처음 나온 유형 순서 유지)
+    final byType = <String, List<DurCaution>>{};
+    for (final c in cautions) {
+      byType.putIfAbsent(c.typeCode, () => []).add(c);
+    }
+    final ordered = [for (final l in byType.values) ...l];
+    final firstOf = {for (final e in byType.entries) e.key: e.value.first};
+    final counts = {for (final e in byType.entries) e.key: e.value.length};
+    final multi = _multiPendingTypes(cautions).toSet();
     return Card(
       color: AppColors.cautionBg,
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -235,20 +258,38 @@ class _CautionGroup extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Text(title, style: t.titleMedium?.copyWith(fontSize: 18)),
           ),
-          ...cautions.map((c) => Theme(
-                // ExpansionTile 위아래 구분선 없애기
-                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                child: ExpansionTile(
-                  initiallyExpanded: single, // 하나뿐이면 바로 펼쳐 둠
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 14),
-                  childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                  expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                  iconColor: AppColors.caution,
-                  collapsedIconColor: AppColors.caution,
-                  title: _CautionTitle(caution: c),
-                  children: [_CautionBody(caution: c)],
+          // 같은 유형끼리 붙여서 보여 주고, 제형·농도별 기준이 여러 개(모두 확정 전)인 유형은
+          // 그 유형 바로 위에 안내를 붙임 (서현 10/11) — 다른 유형까지 해당하는 것처럼 보이지 않게
+          for (final c in ordered) ...[
+            if (multi.contains(c.typeCode) && identical(c, firstOf[c.typeCode]))
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(170),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              )),
+                child: Text(
+                  '아래 ${durTypeLabel(c.typeCode)} ${counts[c.typeCode]}건: $multiStandardNotice',
+                  style: t.bodySmall?.copyWith(fontSize: 13.5, color: AppColors.caution, height: 1.45),
+                ),
+              ),
+            Theme(
+              // ExpansionTile 위아래 구분선 없애기
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: single, // 하나뿐이면 바로 펼쳐 둠
+                tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                iconColor: AppColors.caution,
+                collapsedIconColor: AppColors.caution,
+                title: _CautionTitle(caution: c),
+                children: [_CautionBody(caution: c)],
+              ),
+            ),
+          ],
         ]),
       ),
     );

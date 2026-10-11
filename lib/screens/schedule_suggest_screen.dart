@@ -291,12 +291,7 @@ class _SuggestionCard extends StatelessWidget {
               )),
           if (s.basis != null) ...[
             const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-              child: Text('용법 원문 · ${s.basis}', style: t.bodySmall?.copyWith(color: Toss.grey700, fontSize: 14)),
-            ),
+            _BasisBox(text: s.basis!),
           ],
           const SizedBox(height: 8),
           if (s.confidence == SuggestConfidence.none || slots.isEmpty)
@@ -358,4 +353,47 @@ class _SlotRow extends StatelessWidget {
           ),
         ]),
       );
+}
+
+/// 용법 원문: 짧으면 그대로, 길면 2줄만 보여 주고 '원문 보기 / 접기'
+/// (확인 필요 경고는 이 위에 항상 따로 보임)
+class _BasisBox extends StatefulWidget {
+  const _BasisBox({required this.text});
+  final String text;
+
+  @override
+  State<_BasisBox> createState() => _BasisBoxState();
+}
+
+class _BasisBoxState extends State<_BasisBox> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(color: Toss.grey700, fontSize: 14, height: 1.45);
+    final long = widget.text.length > 60;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 4),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(
+          '용법 원문 · ${widget.text}',
+          style: style,
+          maxLines: (!long || _open) ? null : 2,
+          overflow: (!long || _open) ? TextOverflow.visible : TextOverflow.ellipsis,
+        ),
+        if (long)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => setState(() => _open = !_open),
+              child: Text(_open ? '접기' : '원문 보기', style: const TextStyle(fontSize: 14)),
+            ),
+          )
+        else
+          const SizedBox(height: 8),
+      ]),
+    );
+  }
 }

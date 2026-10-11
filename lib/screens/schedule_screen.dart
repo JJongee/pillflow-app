@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
 import '../widgets/dose_field.dart';
@@ -102,6 +103,24 @@ class ScheduleScreen extends ConsumerWidget {
                   tooltip: '삭제',
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () async {
+                    // 실수로 지우지 않게 약 이름·시간을 보여 주고 한 번 더 확인
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('복용 시간을 삭제할까요?'),
+                        content: Text('${s.itemName}\n${s.time} · ${s.mealRelation.label}',
+                            style: const TextStyle(fontSize: 17, height: 1.5)),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+                          FilledButton(
+                            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('삭제'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok != true || !context.mounted) return;
                     try {
                       await ref.read(repositoryProvider).deleteSchedule(s.id);
                       ref.invalidate(schedulesProvider);

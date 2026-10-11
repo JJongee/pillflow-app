@@ -1,31 +1,47 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 
 /// 약 이미지. 이미지가 없거나(CSV 1,990건) 불러오기 실패하면 기본 아이콘.
+///
+/// e약은요 낱알 사진은 앞·뒷면이 나란히 있는 가로로 긴 사진이라
+/// - 칸을 가로로 넓게(높이 × 1.6) 잡고
+/// - 사진 전체가 보이게(contain) 넣은 뒤
+/// - 남는 공간은 같은 사진을 흐리게 깔아 사진 배경색과 자연스럽게 이어지게 함
 class DrugImage extends StatelessWidget {
-  const DrugImage({super.key, this.url, this.size = 56});
+  const DrugImage({super.key, this.url, this.size = 60});
   final String? url;
+
+  /// 칸 높이. 너비는 높이의 1.6배
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final w = size * 1.6;
     final placeholder = Container(
-      width: size,
+      width: w,
       height: size,
       color: Toss.grey100,
       child: Icon(Icons.medication_outlined, size: size * 0.5, color: Toss.grey400),
     );
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: url == null
           ? placeholder
-          : Image.network(
-              url!,
-              width: size,
+          : SizedBox(
+              width: w,
               height: size,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => placeholder,
+              child: Stack(fit: StackFit.expand, children: [
+                // 뒤: 같은 사진을 꽉 채워 크게 흐림 → 사진 배경색으로 빈 곳을 채움
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14, tileMode: TileMode.mirror),
+                  child: Image.network(url!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => placeholder),
+                ),
+                // 앞: 사진 전체 (잘리지 않게)
+                Image.network(url!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => placeholder),
+              ]),
             ),
     );
   }

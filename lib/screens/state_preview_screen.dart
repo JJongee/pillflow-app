@@ -249,6 +249,11 @@ const _stage2 = DurCheckResult(
       typeCode: 'DOSE', itemSeqs: ['A'], ingredients: [], status: CautionStatus.pending, detail: '',
       info: [InfoLine('성분', '나프록센나트륨'), InfoLine('1일 최대량', '예시 값'), InfoLine('제형', '정제')],
     ),
+    // 같은 성분의 제형·농도별 기준이 여러 개 (사노바겔 사례) → 묶음 위에 안내 문구
+    DurCaution(
+      typeCode: 'DOSE', itemSeqs: ['A'], ingredients: [], status: CautionStatus.pending, detail: '',
+      info: [InfoLine('성분', '나프록센나트륨'), InfoLine('1일 최대량', '다른 제형 예시 값'), InfoLine('제형', '겔')],
+    ),
     DurCaution(
       typeCode: 'DURATION', itemSeqs: ['A'], ingredients: [], status: CautionStatus.confirmed, detail: '',
       info: [InfoLine('기간 기준', '원문 그대로 표시 (예시)'), InfoLine('성분', '나프록센나트륨')],
