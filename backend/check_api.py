@@ -9,6 +9,7 @@
 점검용 계정 2개(check_시각_a/b@test.com)가 DB에 남습니다. 등록한 약·시간표는 마지막에 지웁니다.
 """
 
+import datetime as dt
 import json
 import sys
 import time
@@ -147,7 +148,27 @@ s, b = call("POST", "/me/schedules", {"user_drug_id": drug1, "time": "08:30", "m
 check("식사 관계 오류(LUNCH) → 422", lambda: s == 422, s)
 s, b = call("POST", "/me/schedules", {"user_drug_id": drug1, "time": "08:30", "meal_relation": "AFTER", "dose_text": "1포"}, token_a)
 check("시간표 추가 → 201", lambda: s == 201 and b["time"] == "08:30", (s, b))
-sched = b.get("id") if isinstance(b, dict) else None
+# 1회 복용량 숫자 + 단위 (고연수·손채은 요청, 10/10 추가). 서버는 기록만 하고 판정하지 않는다.
+sched0 = b.get("id") if isinstance(b, dict) else None
+check("복용량을 안 보내면 null", lambda: b.get("dose_amount") is None and b.get("dose_unit") is None, (b.get("dose_amount"), b.get("dose_unit")))
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": 1.5, "dose_unit": "정"}, token_a)
+check("복용량 숫자 + 단위 저장", lambda: s == 200 and b["dose_amount"] == 1.5 and b["dose_unit"] == "정", (s, b))
+s, b = call("GET", "/me/schedules", token=token_a)
+check("목록에도 복용량이 남아 있음", lambda: s == 200 and any(x["dose_amount"] == 1.5 for x in b), s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": None, "dose_unit": None}, token_a)
+check("복용량을 null로 지울 수 있음", lambda: s == 200 and b["dose_amount"] is None and b["dose_unit"] is None, (s, b))
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": 0}, token_a)
+check("복용량 0 → 422", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_amount": -1}, token_a)
+check("복용량 음수 → 422", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_unit": "알"}, token_a)
+check("목록에 없는 단위 → 422 (앱은 직접 입력으로 dose_text에 넣음)", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/schedules/{sched0}", {"dose_text": "반 봉지"}, token_a)
+check("목록에 없는 단위는 dose_text로는 들어감", lambda: s == 200 and b["dose_text"] == "반 봉지" and b["dose_unit"] is None, (s, b))
+s, b = call("POST", "/me/schedules", {"user_drug_id": drug1, "time": "21:00", "dose_amount": 0.5, "dose_unit": "mL"}, token_a)
+check("만들 때 바로 복용량 넣기 (0.5 mL)", lambda: s == 201 and b["dose_amount"] == 0.5 and b["dose_unit"] == "mL", (s, b))
+call("DELETE", f"/me/schedules/{b.get('id')}", token=token_a)  # 복용량 점검용은 정리
+sched = sched0  # 복용 기록은 맨 처음 만든 08:30 시간표로 본다
 today = time.strftime("%Y-%m-%d")
 s, b = call("GET", "/me/intakes", token=token_a, params={"date": today})
 check("오늘 복용 현황 → PENDING", lambda: s == 200 and len(b) == 1 and b[0]["status"] == "PENDING", s)
@@ -302,6 +323,62 @@ states = {c["status"] for c in b.get("cautions", []) if c["type"] == "DURATION"}
 check("한 약에 linked와 pending이 같이 있으면 둘 다 남김", lambda: states == {"CONFIRMED", "PENDING"}, states)
 s, b = call("POST", "/dur/check", {"item_seqs": ["196000011"]}, token_a)
 check("새 3종도 판정(verdict)은 바꾸지 않음", lambda: s == 200 and b["drugs"][0]["verdict"] != "CONTRAINDICATED", s)
+
+# ---------- 12-2. 임부금기·투여기간주의 판정 (손채은 10/11 요청) ----------
+print("[12-2] 임부금기·투여기간 판정")
+s, b = call("GET", "/me/profile", token=token_a)
+check("프로필에 임신 여부가 있고 기본값은 UNKNOWN", lambda: s == 200 and b["pregnancy"] == "UNKNOWN", (s, b))
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)  # 샤젠캡슐, 임부금기 2등급
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+ok = lambda: s == 200 and b["pregnancy"] == "UNKNOWN" and preg and preg[0]["applies"] == "UNKNOWN"
+check("임신 여부 없으면 판정 UNKNOWN", ok, (s, preg[0]["applies"] if preg else None))
+s, b = call("PUT", "/me/profile", {"pregnancy": "NOT_PREGNANT"}, token_a)
+check("임신 여부 저장", lambda: s == 200 and b["pregnancy"] == "NOT_PREGNANT", (s, b))
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+check("임신 아님 → 해당 안 됨(NO)", lambda: preg and preg[0]["applies"] == "NO", preg[0]["applies"] if preg else None)
+s, b = call("PUT", "/me/profile", {"pregnancy": "PREGNANT"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+ok = lambda: preg and preg[0]["applies"] == "YES" and preg[0]["status"] == "CONFIRMED" and preg[0]["applies_note"]
+check("임신 중 + 기준 확인됨 → 해당됨(YES), 상태와 판정은 별개 칸", ok, (preg[0]["status"], preg[0]["applies"]) if preg else None)
+s, b = call("POST", "/dur/check", {"item_seqs": ["200003488"]}, token_a)
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+check("임신 중인데 기준 확인 중 → 확인 필요(CHECK)", lambda: preg and preg[0]["applies"] == "CHECK", preg[0]["applies"] if preg else None)
+s, b = call("PUT", "/me/profile", {"pregnancy": "UNKNOWN"}, token_a)
+check("임신 여부 모름으로 되돌리기", lambda: s == 200 and b["pregnancy"] == "UNKNOWN", s)
+s, b = call("PUT", "/me/profile", {"pregnancy": "MAYBE"}, token_a)
+check("정해진 값이 아니면 422", lambda: s == 422, s)
+# 복용 시작일 → 투여기간주의 판정
+s, b = call("POST", "/me/drugs", {"item_seq": "197600483"}, token_a)  # 비사코딜, 기준 7일
+dur_drug = b.get("id") if isinstance(b, dict) else None
+check("복용 시작일을 안 보내면 null", lambda: s == 201 and b["started_on"] is None and b["ended_on"] is None, (s, b))
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)
+dcs = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstance(b, dict) else []
+check("시작일 없으면 판정 UNKNOWN", lambda: dcs and dcs[0]["applies"] == "UNKNOWN", dcs[0]["applies"] if dcs else None)
+long_ago = (dt.date.today() - dt.timedelta(days=40)).isoformat()
+s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": long_ago}, token_a)
+check("복용 시작일 저장", lambda: s == 200 and b["started_on"] == long_ago, (s, b))
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)
+dcs = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstance(b, dict) else []
+ok = lambda: dcs and any(c["applies"] == "CHECK" and "멈췄다면" in (c["applies_note"] or "") for c in dcs)
+check("41일 복용인데 종료일을 모르면 확정하지 않음(CHECK)", ok, [(c["applies"], c["applies_note"]) for c in dcs])
+s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"ended_on": dt.date.today().isoformat()}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)
+dcs = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstance(b, dict) else []
+ok = lambda: dcs and any(c["applies"] == "YES" and "넘었어요" in (c["applies_note"] or "") for c in dcs)
+check("종료일까지 넣으면 기준 초과로 확정(YES)", ok, [(c["applies"], c["applies_note"]) for c in dcs])
+call("PATCH", f"/me/drugs/{dur_drug}", {"ended_on": None}, token_a)
+recent = (dt.date.today() - dt.timedelta(days=2)).isoformat()
+s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": recent}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)
+dcs = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstance(b, dict) else []
+check("3일 복용 → 기준 안(NO)", lambda: dcs and any(c["applies"] == "NO" for c in dcs), [c["applies"] for c in dcs])
+s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"ended_on": (dt.date.today() - dt.timedelta(days=5)).isoformat()}, token_a)
+check("종료일이 시작일보다 빠르면 422", lambda: s == 422, s)
+s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": None, "ended_on": None}, token_a)
+check("복용 기간을 null로 지울 수 있음", lambda: s == 200 and b["started_on"] is None, (s, b))
+call("DELETE", f"/me/drugs/{dur_drug}", token=token_a)
 
 # ---------- 13. 자동 복용 시간표 제안 ----------
 print("[13] 자동 시간표 제안")

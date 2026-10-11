@@ -38,8 +38,17 @@ SLOT_PLAN = {
 MEAL_SLOTS = {"breakfast", "lunch", "dinner"}  # 식사 관계로 시각을 옮길 수 있는 칸
 
 # 먹는 약이 아닌 단서 (규칙 1)
-NOT_ORAL = r"바르|붙이|부착|점안|점이|점비|안약|눈에|좌제|삽입|주입|흡입|주사|도포|뿌리|분무|패치|씌우|가글|양치|헹구|관장|환부|질에|항문|피부에|두피"
-ORAL = r"복용|먹|마시|삼키|물과 함께|씹어|식후|식전"
+# 한국어 활용에 주의: '바르다 → 바릅니다'처럼 어간이 바뀌므로 활용형도 함께 적는다.
+# (손채은 10/11 검수에서 '바릅니다'만 쓴 약 337건이 먹는 약으로 잘못 분류된 것을 찾음)
+# '치질에는'의 '질에', '~한 점이'의 '점이', '6주입니다'의 '주입'처럼
+# 다른 뜻으로 읽히는 말은 넣지 않거나 활용형까지 함께 적는다.
+NOT_ORAL = (r"바르|바릅|발라|발랐|붙이|붙입|부착|점안|안약|점비|눈에|귀에 넣|좌제|질정|질 ?내|삽입|주입합|주입하|흡입|"
+            r"주사합|주사하|피하주사|근육주사|정맥주사|도포|뿌리|뿌립|분무|패치|씌우|씌웁|가글|양치|헹구|헹굽|"
+            r"관장|환부|항문|피부에|두피")
+# '하지 마십시오'(말다)와 '마십니다'(마시다)를 구분해야 해서 '마십'만 쓰지 않는다.
+# '삼키지 마십시오'(바르는 약에 흔한 문구)가 먹는 약으로 읽히지 않게 활용형을 적는다.
+ORAL = (r"복용|먹습|먹는|먹고|먹어|먹을|마시는|마십니다|마신|삼킵니다|삼켜|삼킨|"
+        r"물과 함께|씹어|씹습|식후|식전")
 
 # 식사 관계 단서 (규칙 5). 앞에 올수록 우선.
 MEAL_CUES = [
@@ -128,10 +137,13 @@ def find_sentence(text_value, pattern):
 
 
 def is_oral(text_value):
-    """먹는 약인지. 먹는 단서가 있으면 먹는 약으로 보고, 없이 외용 단서만 있으면 아니다."""
-    if re.search(ORAL, text_value):
-        return True
-    return not re.search(NOT_ORAL, text_value)
+    """먹는 약인지. True(먹는 약) / False(아님) / None(두 단서가 섞여 판단 못 함).
+    경구와 외용 단서가 함께 있으면 어느 쪽인지 서버가 정하지 않는다. (손채은 10/11 제안)"""
+    oral = bool(re.search(ORAL, text_value))
+    topical = bool(re.search(NOT_ORAL, text_value))
+    if oral and topical:
+        return None
+    return oral or not topical
 
 
 def read_times_per_day(text_value):
@@ -208,7 +220,11 @@ def suggest_one(use_method, base_times, age_range=None):
         return {**none_result, "warnings": ["용법 정보가 없어요. 복용 시간을 직접 정해 주세요."]}
 
     basis = re.sub(r"\s+", " ", text_value).strip()[:200]
-    if not is_oral(text_value):  # 규칙 1
+    oral = is_oral(text_value)  # 규칙 1
+    if oral is None:
+        return {**none_result, "basis": find_sentence(text_value, NOT_ORAL),
+                "warnings": ["먹는 방법과 바르는 방법이 함께 적혀 있어요. 용법 원문을 보고 직접 정해 주세요."]}
+    if not oral:
         return {**none_result, "basis": find_sentence(text_value, NOT_ORAL),
                 "warnings": ["먹는 약이 아니어서 복용 시간을 제안하지 않아요."]}
 

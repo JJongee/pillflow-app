@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import Date, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Date, ForeignKey, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db import Base
@@ -15,6 +15,9 @@ class User(Base):
     birth_year: Mapped[int | None] = mapped_column(default=None)
     # 생년월일을 알면 연령금기를 정확히 판단한다. 모르면 birth_year로 범위를 잡는다.
     birth_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    # 임신 여부. 민감한 정보라 선택 입력이고, 안 고르면 'UNKNOWN'으로 둔다. (손채은 10/11)
+    # NOT_PREGNANT가 12글자라 넉넉히 잡는다
+    pregnancy: Mapped[str] = mapped_column(String(20), default="UNKNOWN", server_default="UNKNOWN")
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 
@@ -26,6 +29,9 @@ class UserDrug(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     item_seq: Mapped[str] = mapped_column(String(30))
     memo: Mapped[str | None] = mapped_column(String(200), default=None)
+    # 복용 시작일·종료일. 투여기간주의를 보려면 시작일이 있어야 한다. 둘 다 선택 입력.
+    started_on: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    ended_on: Mapped[dt.date | None] = mapped_column(Date, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 
@@ -40,7 +46,9 @@ class Schedule(Base):
     time: Mapped[str] = mapped_column(String(5))  # "08:30"
     meal_relation: Mapped[str] = mapped_column(String(10), default="NONE")
     dose_text: Mapped[str | None] = mapped_column(String(50), default=None)
-    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
+    # 1회 복용량을 숫자와 단위로 나눠 둔다. 자동 용량 판정은 아직 하지 않고 기록만 한다.
+    dose_amount: Mapped[float | None] = mapped_column(Numeric(10, 3), default=None)
+    dose_unit: Mapped[str | None] = mapped_column(String(10), default=None)
 
 
 class IntakeLog(Base):

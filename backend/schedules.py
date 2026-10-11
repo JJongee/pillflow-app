@@ -16,6 +16,9 @@ router = APIRouter(prefix="/api/v1/me", tags=["schedules"])
 TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"  # 00:00 ~ 23:59
 MealRelation = Literal["BEFORE", "AFTER", "EMPTY", "NONE"]
 IntakeStatus = Literal["TAKEN", "SKIPPED", "PENDING"]
+# 1회 복용량 단위. 앱 입력 화면의 목록과 똑같이 6개 (고연수 10/10).
+# 목록에 없는 단위는 앱이 '직접 입력'으로 dose_text에만 넣으므로, 여기서는 받지 않는다.
+DoseUnit = Literal["정", "캡슐", "포", "mL", "방울", "매"]
 
 
 # ---------- 복용 시간표 ----------
@@ -25,12 +28,17 @@ class ScheduleCreate(BaseModel):
     time: str = Field(pattern=TIME_PATTERN)
     meal_relation: MealRelation = "NONE"
     dose_text: str | None = Field(default=None, max_length=50)
+    # 숫자 + 단위로 나눈 1회 복용량. 둘 다 생략할 수 있고, 서버는 기록만 하고 판정하지 않는다.
+    dose_amount: float | None = Field(default=None, gt=0, le=1000)
+    dose_unit: DoseUnit | None = None
 
 
 class ScheduleUpdate(BaseModel):
     time: str | None = Field(default=None, pattern=TIME_PATTERN)
     meal_relation: MealRelation | None = None
     dose_text: str | None = Field(default=None, max_length=50)
+    dose_amount: float | None = Field(default=None, gt=0, le=1000)
+    dose_unit: DoseUnit | None = None
 
 
 class ScheduleOut(BaseModel):
@@ -40,6 +48,8 @@ class ScheduleOut(BaseModel):
     time: str
     meal_relation: str
     dose_text: str | None
+    dose_amount: float | None
+    dose_unit: str | None
 
 
 def item_name_of(ud: UserDrug):
@@ -54,6 +64,8 @@ def schedule_out(s: Schedule, ud: UserDrug):
         "time": s.time,
         "meal_relation": s.meal_relation,
         "dose_text": s.dose_text,
+        "dose_amount": float(s.dose_amount) if s.dose_amount is not None else None,
+        "dose_unit": s.dose_unit,
     }
 
 
@@ -99,6 +111,8 @@ def add_schedule(
         time=body.time,
         meal_relation=body.meal_relation,
         dose_text=body.dose_text,
+        dose_amount=body.dose_amount,
+        dose_unit=body.dose_unit,
     )
     db.add(s)
     db.commit()
@@ -115,8 +129,8 @@ def update_schedule(
 ):
     s, ud = get_own_schedule(db, user, schedule_id)
     for key, value in body.model_dump(exclude_unset=True).items():
-        if value is None and key != "dose_text":
-            continue  # 시간·식사 관계는 비울 수 없다
+        if value is None and key not in ("dose_text", "dose_amount", "dose_unit"):
+            continue  # 시간·식사 관계는 비울 수 없다. 복용량은 null로 지울 수 있다.
         setattr(s, key, value)
     db.commit()
     db.refresh(s)
