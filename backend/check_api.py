@@ -349,6 +349,29 @@ s, b = call("PUT", "/me/profile", {"pregnancy": "UNKNOWN"}, token_a)
 check("임신 여부 모름으로 되돌리기", lambda: s == 200 and b["pregnancy"] == "UNKNOWN", s)
 s, b = call("PUT", "/me/profile", {"pregnancy": "MAYBE"}, token_a)
 check("정해진 값이 아니면 422", lambda: s == 422, s)
+# 누구의 약인지 + 성별 (고연수 10/11)
+s, b = call("GET", "/me/profile", token=token_a)
+check("프로필에 subject·sex가 있고 기본값은 UNKNOWN",
+      lambda: s == 200 and b["subject"] == "UNKNOWN" and b["sex"] == "UNKNOWN", (s, b))
+s, b = call("PUT", "/me/profile", {"subject": "OTHER", "sex": "MALE"}, token_a)
+check("subject·sex 저장", lambda: s == 200 and b["subject"] == "OTHER" and b["sex"] == "MALE", (s, b))
+s, b = call("PUT", "/me/profile", {"pregnancy": "PREGNANT"}, token_a)
+check("성별만 바꿔도 임신 여부는 남아 있음", lambda: s == 200 and b["sex"] == "MALE", (s, b))
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+ok = lambda: preg and preg[0]["applies"] == "NO" and "남성" in (preg[0]["applies_note"] or "")
+check("남성이면 임신 중이어도 해당 안 됨(NO)", ok, (preg[0]["applies"], preg[0]["applies_note"]) if preg else None)
+check("DUR 응답에 sex·subject가 같이 온다",
+      lambda: b.get("sex") == "MALE" and b.get("subject") == "OTHER", (b.get("sex"), b.get("subject")))
+s, b = call("PUT", "/me/profile", {"sex": "FEMALE"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+check("여성으로 되돌리면 다시 해당됨(YES)", lambda: preg and preg[0]["applies"] == "YES", preg[0]["applies"] if preg else None)
+s, b = call("PUT", "/me/profile", {"sex": "OTHER"}, token_a)
+check("성별이 정해진 값이 아니면 422", lambda: s == 422, s)
+s, b = call("PUT", "/me/profile", {"subject": "FAMILY"}, token_a)
+check("subject가 정해진 값이 아니면 422", lambda: s == 422, s)
+call("PUT", "/me/profile", {"subject": "UNKNOWN", "sex": "UNKNOWN", "pregnancy": "PREGNANT"}, token_a)
 # 복용 시작일 → 투여기간주의 판정
 s, b = call("POST", "/me/drugs", {"item_seq": "197600483"}, token_a)  # 비사코딜, 기준 7일
 dur_drug = b.get("id") if isinstance(b, dict) else None

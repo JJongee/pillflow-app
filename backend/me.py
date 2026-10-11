@@ -16,6 +16,9 @@ router = APIRouter(prefix="/api/v1/me", tags=["me"])
 
 # 임신 여부. 민감한 정보라 선택 입력이고, 안 고르면 UNKNOWN이다. (손채은 10/11)
 Pregnancy = Literal["PREGNANT", "NOT_PREGNANT", "UNKNOWN"]
+# 이 프로필이 누구 약인지. 가족 약을 대신 관리하는 경우가 있다. (고연수 10/11)
+Subject = Literal["SELF", "OTHER", "UNKNOWN"]
+Sex = Literal["FEMALE", "MALE", "UNKNOWN"]
 
 
 class UserDrugCreate(BaseModel):
@@ -139,6 +142,8 @@ class Profile(BaseModel):
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
     birth_date: dt.date | None = None
     pregnancy: Pregnancy = "UNKNOWN"
+    subject: Subject = "UNKNOWN"
+    sex: Sex = "UNKNOWN"
 
     @field_validator("birth_date")
     @classmethod
@@ -153,6 +158,8 @@ def profile_out(user: User):
         "birth_year": user.birth_year,
         "birth_date": user.birth_date.isoformat() if user.birth_date else None,
         "pregnancy": user.pregnancy or "UNKNOWN",
+        "subject": user.subject or "UNKNOWN",
+        "sex": user.sex or "UNKNOWN",
     }
 
 
@@ -175,6 +182,10 @@ def put_profile(
             user.birth_year = body.birth_date.year
     if "pregnancy" in sent:
         user.pregnancy = body.pregnancy
+    if "subject" in sent:
+        user.subject = body.subject
+    if "sex" in sent:
+        user.sex = body.sex
     if "birth_year" in sent:
         user.birth_year = body.birth_year
         # 해를 바꿨는데 저장된 생년월일과 어긋나면, 오래된 생년월일을 지운다

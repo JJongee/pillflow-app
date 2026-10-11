@@ -144,6 +144,7 @@ NOTE_PREG_PERIOD = "임신 시기에 따라 다를 수 있어요. 임신 여부�
 NOTE_PREG_PENDING_APPLY = "임신 중이라고 하셨는데, 이 약의 임부금기 기준은 아직 확인 중이에요. 의사·약사와 상담하세요."
 NOTE_PREG_NOT = "임신 중이 아니라고 하셨어요. 그래도 참고로 보여 드려요."
 NOTE_PREG_UNKNOWN = "임신 여부를 입력하면 해당되는지 알려 드릴 수 있어요."
+NOTE_PREG_MALE = "남성으로 입력해서 해당되지 않아요. 그래도 참고로 보여 드려요."
 NOTE_DURATION_OVER = "복용한 기간이 {days}일로 기준({limit}일)을 넘었어요. 의사·약사와 상담하세요."
 # 종료일이 없으면 아직 먹는 중인지 알 수 없다. 기간이 길어도 확정하지 않는다. (손채은 10/11)
 NOTE_DURATION_MAYBE = ("시작일부터 오늘까지 {days}일이고 기준은 {limit}일이에요. "
@@ -209,6 +210,8 @@ class DurCheckResult(BaseModel):
     checked_at: str
     age_unknown: bool
     pregnancy: str  # PREGNANT / NOT_PREGNANT / UNKNOWN. 임부금기 판정에 쓴다
+    sex: str  # FEMALE / MALE / UNKNOWN. MALE이면 임부금기는 해당 없음
+    subject: str  # SELF / OTHER / UNKNOWN. 이 프로필이 누구 약인지
     drugs: list[DurDrug]
     findings: list[DurFinding]
     cautions: list[DurCaution]
@@ -340,8 +343,11 @@ def simple_caution(kind, row, rule, order, period=None, today=None):
     }
 
 
-def judge_pregnancy(status, reason, pregnancy):
-    """임신 여부로 임부금기가 해당되는지 본다. (applies, 안내)"""
+def judge_pregnancy(status, reason, pregnancy, sex="UNKNOWN"):
+    """임신 여부로 임부금기가 해당되는지 본다. (applies, 안내)
+    성별이 남성이면 임신 여부를 묻지 않고 해당 없음으로 본다. (고연수 10/11)"""
+    if sex == "MALE":
+        return "NO", NOTE_PREG_MALE
     if pregnancy not in ("PREGNANT", "NOT_PREGNANT"):
         return "UNKNOWN", NOTE_PREG_UNKNOWN
     if pregnancy == "NOT_PREGNANT":
@@ -382,7 +388,7 @@ def judge_duration(status, rules, period, today):
 
 
 def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=(),
-                   pregnancy="UNKNOWN", periods=None, today=None):
+                   pregnancy="UNKNOWN", sex="UNKNOWN", periods=None, today=None):
     """임부금기·용량주의·노인주의·효능군중복주의·투여기간주의 참고 정보.
     판정(verdict)에는 쓰지 않고, 기준 확인 중(pending)인 기록도 빼지 않는다.
     pregnancy(임신 여부)와 periods(약별 복용 시작일·종료일)가 있으면 applies에 판정 결과를 담는다."""
@@ -405,7 +411,7 @@ def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=()
             note = join_text(row["remark"], NOTE_PREG_CONFLICT if status == "CONFLICT" else NOTE_PREG_PENDING)
         if reason:
             detail += f" · {reason}"
-        applies, applies_note = judge_pregnancy(status, reason, pregnancy)
+        applies, applies_note = judge_pregnancy(status, reason, pregnancy, sex)
         key = (order.get(s, 999), "1", s, ingr or "", detail)
         items.setdefault(key, {
             "type": "PREGNANCY", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
@@ -596,7 +602,8 @@ def dur_check(
     drugs, findings = build_result(seqs, fetched, rows, age_rows, pending_rows, user.birth_year,
                                    birth_date=user.birth_date)
     cautions = build_cautions(seqs, **caution_rows,
-                              pregnancy=user.pregnancy or "UNKNOWN", periods=periods)
+                              pregnancy=user.pregnancy or "UNKNOWN",
+                              sex=user.sex or "UNKNOWN", periods=periods)
 
     notes = []
     if age_ready:
@@ -621,6 +628,8 @@ def dur_check(
         "checked_at": dt.date.today().isoformat(),
         "age_unknown": user.birth_year is None and user.birth_date is None,
         "pregnancy": user.pregnancy or "UNKNOWN",
+        "sex": user.sex or "UNKNOWN",
+        "subject": user.subject or "UNKNOWN",
         "drugs": drugs,
         "findings": findings,
         "cautions": cautions,

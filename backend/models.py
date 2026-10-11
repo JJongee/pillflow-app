@@ -18,6 +18,10 @@ class User(Base):
     # 임신 여부. 민감한 정보라 선택 입력이고, 안 고르면 'UNKNOWN'으로 둔다. (손채은 10/11)
     # NOT_PREGNANT가 12글자라 넉넉히 잡는다
     pregnancy: Mapped[str] = mapped_column(String(20), default="UNKNOWN", server_default="UNKNOWN")
+    # 이 프로필이 누구 것인지. 가족 약을 대신 관리하는 경우가 있어 '약 먹는 사람' 기준으로 둔다. (고연수 10/11)
+    subject: Mapped[str] = mapped_column(String(10), default="UNKNOWN", server_default="UNKNOWN")
+    # 성별. 남성이면 임부금기는 해당되지 않는다고 판정한다.
+    sex: Mapped[str] = mapped_column(String(10), default="UNKNOWN", server_default="UNKNOWN")
     created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 

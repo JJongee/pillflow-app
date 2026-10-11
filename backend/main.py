@@ -62,6 +62,8 @@ with engine.begin() as _conn:
     _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS pregnancy VARCHAR(20) NOT NULL DEFAULT 'UNKNOWN'"))
     # 먼저 만들어진 서버에서는 이 칸이 VARCHAR(10)이라 NOT_PREGNANT(12글자)가 안 들어간다
     _conn.execute(text("ALTER TABLE users ALTER COLUMN pregnancy TYPE VARCHAR(20)"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subject VARCHAR(10) NOT NULL DEFAULT 'UNKNOWN'"))
+    _conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS sex VARCHAR(10) NOT NULL DEFAULT 'UNKNOWN'"))
     _conn.execute(text("ALTER TABLE user_drugs ADD COLUMN IF NOT EXISTS started_on DATE"))
     _conn.execute(text("ALTER TABLE user_drugs ADD COLUMN IF NOT EXISTS ended_on DATE"))
 with SessionLocal() as _db:
