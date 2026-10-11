@@ -89,6 +89,10 @@ class UserDrug {
   final String? memo;
   final String? createdAt;
 
+  /// 복용 시작일·종료일 (YYYY-MM-DD, 없으면 null). 투여기간주의 판정에 씀
+  final String? startedOn;
+  final String? endedOn;
+
   const UserDrug({
     required this.id,
     required this.itemSeq,
@@ -97,7 +101,29 @@ class UserDrug {
     this.imageUrl,
     this.memo,
     this.createdAt,
+    this.startedOn,
+    this.endedOn,
   });
+
+  UserDrug copyWith({String? memo, String? startedOn, String? endedOn, bool clearMemo = false, bool setPeriod = false}) =>
+      UserDrug(
+        id: id,
+        itemSeq: itemSeq,
+        itemName: itemName,
+        entpName: entpName,
+        imageUrl: imageUrl,
+        memo: clearMemo ? memo : (memo ?? this.memo),
+        createdAt: createdAt,
+        startedOn: setPeriod ? startedOn : this.startedOn,
+        endedOn: setPeriod ? endedOn : this.endedOn,
+      );
+
+  /// 화면 표시: "복용 2026.10.01 ~ 2026.10.07" / "복용 2026.10.01 ~" / null
+  String? get periodLabel {
+    if (startedOn == null && endedOn == null) return null;
+    String f(String? d) => d == null ? '' : d.replaceAll('-', '.');
+    return '복용 ${f(startedOn)} ~ ${f(endedOn)}'.trimRight();
+  }
 
   factory UserDrug.fromJson(Map<String, dynamic> j) => UserDrug(
         id: j['id'] as int,
@@ -107,6 +133,8 @@ class UserDrug {
         imageUrl: _str(j['image_url']),
         memo: _str(j['memo']),
         createdAt: _str(j['created_at']),
+        startedOn: _str(j['started_on']),
+        endedOn: _str(j['ended_on']),
       );
 }
 
@@ -315,6 +343,23 @@ enum CautionStatus {
       CautionStatus.values.firstWhere((e) => e.code == c, orElse: () => CautionStatus.pending);
 }
 
+/// 참고 정보의 **판정 결과**(사용자에게 해당되는지). 데이터 연결 상태(CautionStatus)와 다른 칸
+/// CHECK·UNKNOWN은 화면에서 둘 다 "확인 필요" (UNKNOWN일 때만 입력을 권함)
+enum Applies {
+  yes('YES', '해당됨'),
+  check('CHECK', '확인 필요'),
+  no('NO', '해당 안 됨'),
+  unknown('UNKNOWN', '확인 필요');
+
+  final String code;
+  final String label;
+  const Applies(this.code, this.label);
+
+  /// 칸이 없으면 null(예전 서버), 모르는 값은 '확인 필요'
+  static Applies? fromCode(String? c) =>
+      c == null ? null : Applies.values.firstWhere((e) => e.code == c, orElse: () => Applies.check);
+}
+
 /// 참고 정보 카드에 줄로 보여 줄 항목 (서버 cautions[].info). 서버는 값이 있는 칸만 보냄
 class InfoLine {
   final String label;
@@ -370,6 +415,10 @@ class DurCaution {
   /// 서버가 정리해 준 표시용 줄 (있으면 이걸 우선 그림)
   final List<InfoLine> info;
 
+  /// 판정 결과와 그 이유 (서버 applies / applies_note)
+  final Applies? applies;
+  final String? appliesNote;
+
   const DurCaution({
     required this.typeCode,
     required this.itemSeqs,
@@ -383,6 +432,8 @@ class DurCaution {
     this.series,
     this.periodText,
     this.info = const [],
+    this.applies,
+    this.appliesNote,
   });
 
   String get label => durTypeLabel(typeCode);
@@ -421,6 +472,8 @@ class DurCaution {
         series: _first(j, const ['series', 'drug_class', 'class_name']),
         periodText: _first(j, const ['period_text', 'duration_text', 'period', 'duration']),
         info: InfoLine.parse(j['info']),
+        applies: Applies.fromCode(_str(j['applies'])?.toUpperCase()),
+        appliesNote: _str(j['applies_note']),
       );
 
   /// findings 로 온 2단계 유형(노인주의 등)을 참고 정보로 옮길 때 사용.
@@ -444,6 +497,10 @@ class DurCheckResult {
   final List<DurFinding> findings;
   final List<DurCaution> cautions;
 
+  /// 서버가 함께 보내는 프로필 값 (없으면 null → 앱의 프로필 값 사용)
+  final Sex? sex;
+  final Subject? subject;
+
   const DurCheckResult({
     this.dataVersion,
     this.checkedAt,
@@ -451,6 +508,8 @@ class DurCheckResult {
     required this.drugs,
     required this.findings,
     this.cautions = const [],
+    this.sex,
+    this.subject,
   });
 
   /// 판정에 들어가는 금기 (병용금기·연령금기)
@@ -473,6 +532,8 @@ class DurCheckResult {
         cautions: (j['cautions'] as List? ?? const [])
             .map((e) => DurCaution.fromJson(e as Map<String, dynamic>))
             .toList(),
+        sex: j['sex'] == null ? null : Sex.fromCode(_str(j['sex'])),
+        subject: j['subject'] == null ? null : Subject.fromCode(_str(j['subject'])),
       );
 }
 
@@ -564,11 +625,66 @@ class ScheduleSuggestResult {
       );
 }
 
+/// 임신 여부 (선택 입력). 응답 안 함(UNKNOWN)은 '임신 아님'과 다름
+enum Pregnancy {
+  pregnant('PREGNANT', '임신 중'),
+  notPregnant('NOT_PREGNANT', '임신 아님'),
+  unknown('UNKNOWN', '응답 안 함');
+
+  final String code;
+  final String label;
+  const Pregnancy(this.code, this.label);
+
+  static Pregnancy fromCode(String? c) =>
+      Pregnancy.values.firstWhere((e) => e.code == c, orElse: () => Pregnancy.unknown);
+}
+
+/// 누구의 약을 관리하나요 (프로필 = 약 먹는 사람 기준)
+enum Subject {
+  self('SELF', '본인'),
+  other('OTHER', '가족 등 다른 사람'),
+  unknown('UNKNOWN', '응답 안 함');
+
+  final String code;
+  final String label;
+  const Subject(this.code, this.label);
+
+  static Subject fromCode(String? c) => Subject.values.firstWhere((e) => e.code == c, orElse: () => Subject.unknown);
+
+  /// 판정 결과 앞에 붙는 말: 본인·모름 → "내 경우", 다른 사람 → "복용하는 분"
+  String get resultPrefix => this == Subject.other ? '복용하는 분' : '내 경우';
+}
+
+/// 성별 (선택). 남성이면 임신 여부를 묻지 않음
+enum Sex {
+  female('FEMALE', '여성'),
+  male('MALE', '남성'),
+  unknown('UNKNOWN', '응답 안 함');
+
+  final String code;
+  final String label;
+  const Sex(this.code, this.label);
+
+  static Sex fromCode(String? c) => Sex.values.firstWhere((e) => e.code == c, orElse: () => Sex.unknown);
+}
+
 /// 내 정보 (GET /me/profile). 생년월일이 있으면 그걸 우선 사용
 class Profile {
   final int? birthYear;
   final DateTime? birthDate;
-  const Profile({this.birthYear, this.birthDate});
+  final Pregnancy pregnancy;
+  final Subject subject;
+  final Sex sex;
+  const Profile({
+    this.birthYear,
+    this.birthDate,
+    this.pregnancy = Pregnancy.unknown,
+    this.subject = Subject.unknown,
+    this.sex = Sex.unknown,
+  });
+
+  /// 임신 여부를 묻는지: 남성만 숨김 (성별을 건너뛴 여성도 나중에 입력할 수 있게)
+  bool get asksPregnancy => sex != Sex.male;
 
   bool get hasAge => birthYear != null || birthDate != null;
 
@@ -582,6 +698,9 @@ class Profile {
   factory Profile.fromJson(Map<String, dynamic> j) => Profile(
         birthYear: j['birth_year'] is int ? j['birth_year'] as int : int.tryParse('${j['birth_year']}'),
         birthDate: DateTime.tryParse(_str(j['birth_date']) ?? ''),
+        pregnancy: Pregnancy.fromCode(_str(j['pregnancy'])),
+        subject: Subject.fromCode(_str(j['subject'])),
+        sex: Sex.fromCode(_str(j['sex'])),
       );
 }
 

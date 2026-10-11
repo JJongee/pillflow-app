@@ -153,16 +153,17 @@ class MockRepository implements PillRepository {
     await _delay();
     final i = _myDrugs.indexWhere((d) => d.id == id);
     if (i < 0) throw RepoException('약을 찾을 수 없어요.', code: 'NOT_FOUND');
-    final o = _myDrugs[i];
-    final n = UserDrug(
-      id: o.id,
-      itemSeq: o.itemSeq,
-      itemName: o.itemName,
-      entpName: o.entpName,
-      imageUrl: o.imageUrl,
-      memo: memo,
-      createdAt: o.createdAt,
-    );
+    final n = _myDrugs[i].copyWith(memo: memo, clearMemo: true);
+    _myDrugs[i] = n;
+    return n;
+  }
+
+  @override
+  Future<UserDrug> setDrugPeriod(int id, {String? startedOn, String? endedOn}) async {
+    await _delay();
+    final i = _myDrugs.indexWhere((d) => d.id == id);
+    if (i < 0) throw RepoException('약을 찾을 수 없어요.', code: 'NOT_FOUND');
+    final n = _myDrugs[i].copyWith(startedOn: startedOn, endedOn: endedOn, setPeriod: true);
     _myDrugs[i] = n;
     return n;
   }
@@ -258,7 +259,21 @@ class MockRepository implements PillRepository {
   }
 
   @override
-  Future<Profile> getProfile() async => Profile(birthYear: _birthYear, birthDate: _birthDate);
+  Future<Profile> getProfile() async =>
+      Profile(birthYear: _birthYear, birthDate: _birthDate, pregnancy: _pregnancy, subject: _subject, sex: _sex);
+
+  Pregnancy _pregnancy = Pregnancy.unknown;
+  Subject _subject = Subject.unknown;
+  Sex _sex = Sex.unknown;
+
+  @override
+  Future<void> setSubject(Subject s) async => _subject = s;
+
+  @override
+  Future<void> setSex(Sex s) async => _sex = s;
+
+  @override
+  Future<void> setPregnancy(Pregnancy p) async => _pregnancy = p;
 
   @override
   Future<void> setBirthDate(DateTime date) async {
@@ -339,6 +354,7 @@ class MockRepository implements PillRepository {
         .cast<Map<String, dynamic>>()
         .map(DurCaution.fromJson)
         .where((c) => c.itemSeqs.any(seqs.contains))
+        .map(_withApplies)
         .toList();
 
     return DurCheckResult(
@@ -348,6 +364,8 @@ class MockRepository implements PillRepository {
       drugs: drugs,
       findings: findings,
       cautions: cautions,
+      sex: _sex,
+      subject: _subject,
     );
   }
 
@@ -415,5 +433,47 @@ class MockRepository implements PillRepository {
       return now.year - d.year - (hadBirthday ? 0 : 1);
     }
     return _birthYear == null ? null : now.year - _birthYear!;
+  }
+
+  /// 서버 applies 판정 흉내 (간단판): 임부금기는 임신 여부로, 투여기간은 시작일 유무로, 나머지는 항상 확인 필요
+  DurCaution _withApplies(DurCaution c) {
+    Applies a;
+    String note;
+    switch (c.kind) {
+      case DurKind.pregnancy when _sex == Sex.male:
+        (a, note) = (Applies.no, '남성으로 입력해서 해당되지 않아요. 그래도 참고로 보여 드려요.');
+      case DurKind.pregnancy:
+        (a, note) = switch (_pregnancy) {
+          Pregnancy.unknown => (Applies.unknown, '임신 여부를 입력하지 않아 판단할 수 없어요.'),
+          Pregnancy.notPregnant => (Applies.no, '임신 중이 아니라고 입력해서 해당되지 않아요.'),
+          Pregnancy.pregnant => c.status == CautionStatus.confirmed
+              ? (Applies.yes, '임신 중이고 임부금기 기준이 확인된 약이에요.')
+              : (Applies.check, '임신 중이지만 기준이 확인 중이에요.'),
+        };
+      case DurKind.duration:
+        final d = _myDrugs.where((m) => c.itemSeqs.contains(m.itemSeq));
+        final started = d.isNotEmpty && d.first.startedOn != null;
+        (a, note) = started
+            ? (Applies.check, '복용 기간과 기준을 함께 확인해 주세요.')
+            : (Applies.unknown, '복용 시작일이 없어 판단할 수 없어요.');
+      default:
+        (a, note) = (Applies.check, '사용자별로 판정할 기준이 없어 확인이 필요해요.');
+    }
+    return DurCaution(
+      typeCode: c.typeCode,
+      itemSeqs: c.itemSeqs,
+      ingredients: c.ingredients,
+      status: c.status,
+      grade: c.grade,
+      detail: c.detail,
+      conditionNote: c.conditionNote,
+      noticeDate: c.noticeDate,
+      efficacyGroup: c.efficacyGroup,
+      series: c.series,
+      periodText: c.periodText,
+      info: c.info,
+      applies: a,
+      appliesNote: note,
+    );
   }
 }

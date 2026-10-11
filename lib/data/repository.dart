@@ -43,6 +43,12 @@ abstract class PillRepository {
   // 5. 프로필
   Future<Profile> getProfile();
   Future<void> setBirthDate(DateTime date);
+  Future<void> setPregnancy(Pregnancy p);
+  Future<void> setSubject(Subject s);
+  Future<void> setSex(Sex s);
+
+  /// 복용 시작일·종료일 (YYYY-MM-DD, null이면 지움)
+  Future<UserDrug> setDrugPeriod(int id, {String? startedOn, String? endedOn});
   Future<void> setBirthYear(int? year);
 
   // 6. DUR

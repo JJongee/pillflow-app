@@ -160,4 +160,30 @@ void main() {
     await r.setBirthDate(DateTime(now.year - 15, now.month, now.day).subtract(const Duration(days: 1)));
     expect((await r.checkDur()).findings.any((f) => f.type == FindingType.age), isFalse);
   });
+
+  test('임신 여부·복용 기간 저장, 참고 정보 판정 결과 포함', () async {
+    final r = MockRepository();
+    expect((await r.getProfile()).pregnancy, Pregnancy.unknown);
+    await r.setPregnancy(Pregnancy.pregnant);
+    expect((await r.getProfile()).pregnancy, Pregnancy.pregnant);
+    final d = await r.addMyDrug('202106092'); // 타이레놀: 용량주의
+    final u = await r.setDrugPeriod(d.id, startedOn: '2026-10-01', endedOn: null);
+    expect(u.startedOn, '2026-10-01');
+    expect(u.endedOn, isNull);
+    final res = await r.checkDur();
+    expect(res.cautions.single.applies, Applies.check); // 용량주의는 항상 확인 필요
+  });
+
+  test('약 먹는 분·성별 저장, DUR 결과에도 함께 온다', () async {
+    final r = MockRepository();
+    await r.setSubject(Subject.other);
+    await r.setSex(Sex.male);
+    final p = await r.getProfile();
+    expect(p.subject, Subject.other);
+    expect(p.sex, Sex.male);
+    await r.addMyDrug('202106092');
+    final res = await r.checkDur();
+    expect(res.sex, Sex.male);
+    expect(res.subject, Subject.other);
+  });
 }

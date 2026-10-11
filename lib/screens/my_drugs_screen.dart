@@ -81,14 +81,19 @@ class MyDrugsScreen extends ConsumerWidget {
               return ListTile(
                 leading: DrugImage(url: d.imageUrl),
                 title: Text(d.itemName),
-                subtitle: Text([d.entpName, d.memo].whereType<String>().join(' · ')),
+                subtitle: Text([d.entpName, d.memo, d.periodLabel].whereType<String>().join(' · ')),
                 onTap: () => Navigator.of(context)
                     .push(MaterialPageRoute(builder: (_) => DrugDetailScreen(itemSeq: d.itemSeq))),
                 trailing: PopupMenuButton<String>(
                   tooltip: '더보기',
-                  onSelected: (v) => v == 'memo' ? _editMemo(context, ref, d) : _delete(context, ref, d),
+                  onSelected: (v) => switch (v) {
+                    'memo' => _editMemo(context, ref, d),
+                    'period' => editDrugPeriod(context, ref, d),
+                    _ => _delete(context, ref, d),
+                  },
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'memo', child: Text('메모 수정')),
+                    PopupMenuItem(value: 'period', child: Text('복용 기간')),
                     PopupMenuItem(value: 'delete', child: Text('삭제')),
                   ],
                 ),

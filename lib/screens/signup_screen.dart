@@ -22,6 +22,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _pw2 = TextEditingController();
   final _birthText = TextEditingController();
   DateTime? _birth;
+  Subject _subject = Subject.unknown;
+  Sex _sex = Sex.unknown;
+  Pregnancy _preg = Pregnancy.unknown;
   bool _loading = false;
   bool _hidePw = true;
   String? _error;
@@ -70,18 +73,25 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final navigator = Navigator.of(context);
     final email = _email.text.trim();
     final birth = _birth;
+    final subject = _subject, sex = _sex;
+    // 여성으로 고른 경우에만 임신 여부를 보냄
+    final preg = sex == Sex.female ? _preg : Pregnancy.unknown;
     try {
       await repo.signup(email, _pw.text);
       final token = await repo.login(email, _pw.text);
       ref.read(authNoticeProvider.notifier).state = null;
       auth.state = token; // 이후 요청부터 토큰이 붙음
-      if (birth != null) {
+      // 프로필 저장 실패는 가입을 막지 않음 (설정에서 다시 입력 가능)
+      Future<void> quiet(Future<void> Function() f) async {
         try {
-          await repo.setBirthDate(birth);
-        } catch (_) {
-          // 생년월일 저장 실패는 가입을 막지 않음 (설정에서 다시 입력 가능)
-        }
+          await f();
+        } catch (_) {}
       }
+
+      if (birth != null) await quiet(() => repo.setBirthDate(birth));
+      if (subject != Subject.unknown) await quiet(() => repo.setSubject(subject));
+      if (sex != Sex.unknown) await quiet(() => repo.setSex(sex));
+      if (preg != Pregnancy.unknown) await quiet(() => repo.setPregnancy(preg));
       ref.invalidate(profileProvider);
       navigator.popUntil((r) => r.isFirst); // 로그인 화면 위의 가입 화면 닫기 → 홈
     } on RepoException catch (e) {
@@ -138,20 +148,49 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
             style: const TextStyle(fontSize: 18),
             decoration: const InputDecoration(labelText: '비밀번호 확인', prefixIcon: Icon(Icons.lock_outline)),
           ),
+          const SizedBox(height: 20),
+          _Choice<Subject>(
+            title: '누구의 약을 관리하나요? (선택)',
+            options: const [Subject.self, Subject.other],
+            value: _subject,
+            label: (s) => s.label,
+            onChanged: (v) => setState(() => _subject = v),
+          ),
           const SizedBox(height: 14),
           TextField(
             controller: _birthText,
             readOnly: true,
             onTap: _pickBirth,
             style: const TextStyle(fontSize: 18),
-            decoration: const InputDecoration(
-              labelText: '생년월일 (선택)',
+            decoration: InputDecoration(
+              labelText: _subject == Subject.other ? '복용하는 분의 생년월일 (선택)' : '생년월일 (선택)',
               hintText: '눌러서 입력',
               helperText: '나이에 따라 금기인 약을 확인할 때만 써요. 나중에 설정에서 입력해도 돼요.',
               helperMaxLines: 2,
               prefixIcon: Icon(Icons.cake_outlined),
             ),
           ),
+          const SizedBox(height: 16),
+          _Choice<Sex>(
+            title: _subject == Subject.other ? '복용하는 분의 성별 (선택)' : '성별 (선택)',
+            options: const [Sex.female, Sex.male],
+            value: _sex,
+            label: (s) => s.label,
+            onChanged: (v) => setState(() => _sex = v),
+          ),
+          // 여성일 때만 임신 여부를 물음 (나중에 설정에서도 입력 가능)
+          if (_sex == Sex.female) ...[
+            const SizedBox(height: 16),
+            _Choice<Pregnancy>(
+              title: '임신 여부 (선택)',
+              options: const [Pregnancy.pregnant, Pregnancy.notPregnant],
+              value: _preg,
+              label: (p) => p.label,
+              onChanged: (v) => setState(() => _preg = v),
+            ),
+            const SizedBox(height: 4),
+            Text('임부금기가 해당되는지 확인할 때만 써요.', style: t.bodySmall),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 16)),
@@ -167,4 +206,36 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       ),
     );
   }
+}
+
+/// 고르기 칩 한 줄. 이미 고른 칩을 다시 누르면 선택 해제(응답 안 함)
+class _Choice<T> extends StatelessWidget {
+  const _Choice({required this.title, required this.options, required this.value, required this.label, required this.onChanged});
+  final String title;
+  final List<T> options;
+  final T value;
+  final String Function(T) label;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, children: [
+          for (final o in options)
+            ChoiceChip(
+              label: Text(label(o), style: const TextStyle(fontSize: 16)),
+              selected: value == o,
+              onSelected: (on) => onChanged(on ? o : _unset(o)),
+            ),
+        ]),
+      ]);
+
+  /// 선택 해제 = 각 enum의 '응답 안 함'
+  static R _unset<R>(R o) => switch (o) {
+        Subject() => Subject.unknown as R,
+        Sex() => Sex.unknown as R,
+        Pregnancy() => Pregnancy.unknown as R,
+        _ => o,
+      };
 }

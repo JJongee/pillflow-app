@@ -36,6 +36,12 @@ class DurResultScreen extends ConsumerWidget {
           final cautions = r.allCautions;
           final hasDanger = danger.isNotEmpty;
           final undetermined = r.drugs.where((d) => d.verdict == Verdict.undetermined).length;
+          // 판정에 쓰는 프로필 값: DUR 응답에 같이 오면 그걸, 없으면 내 프로필
+          final sex = r.sex ?? profile?.sex ?? Sex.unknown;
+          final subject = r.subject ?? profile?.subject ?? Subject.unknown;
+          final prefix = subject.resultPrefix;
+          // 임신 중 + 임부금기 해당됨 → 판정(빨간 배너)은 그대로 두고 경고만 세게 (연우 제안)
+          final pregHit = cautions.where((c) => c.kind == DurKind.pregnancy && c.applies == Applies.yes).toList();
           return ListView(padding: const EdgeInsets.all(16), children: [
             _SummaryCard(hasDanger: hasDanger, undetermined: undetermined, total: r.drugs.length),
             if (r.ageUnknown)
@@ -56,6 +62,11 @@ class DurResultScreen extends ConsumerWidget {
               ...danger.map((f) => _FindingCard(finding: f, names: names)),
               const _ConsultNotice(),
             ],
+            if (pregHit.isNotEmpty)
+              _PregnancyAlert(
+                drugs: {for (final c in pregHit) ...c.itemSeqs.map((x) => names[x] ?? x)}.toList(),
+                prefix: prefix,
+              ),
             if (cautions.isNotEmpty) ...[
               const SizedBox(height: 20),
               Text('참고 정보', style: t.titleMedium),
@@ -66,10 +77,20 @@ class DurResultScreen extends ConsumerWidget {
                 style: t.bodySmall?.copyWith(fontSize: 14, height: 1.45),
               ),
               const SizedBox(height: 8),
+              // 판정에 쓰는 내 정보를 위에 모아 보여 주고 바로 바꿀 수 있게
+              if (sex != Sex.male && cautions.any((c) => c.kind == DurKind.pregnancy))
+                _MyInfoChip(
+                  icon: Icons.pregnant_woman_outlined,
+                  label: '임신 여부',
+                  value: (profile?.pregnancy ?? Pregnancy.unknown).label,
+                  onTap: () => editPregnancy(context, ref, profile?.pregnancy ?? Pregnancy.unknown),
+                ),
               // 약품별로 묶고, 유형은 한 줄씩 접어서 보여 줌 (손채은 10/8 제안)
               ..._groupBySeqs(cautions).entries.map((e) => _CautionGroup(
                     title: e.value.first.itemSeqs.map((x) => names[x] ?? x).join(', '),
                     cautions: e.value,
+                    prefix: prefix,
+                    sex: sex,
                   )),
             ],
             const SizedBox(height: 20),
@@ -211,7 +232,11 @@ List<String> _multiPendingTypes(List<DurCaution> list) {
   }
   return [
     for (final e in byType.entries)
-      if (e.value.length >= 2 && e.value.every((c) => c.status != CautionStatus.confirmed)) e.key,
+      if (e.value.length >= 2 &&
+          e.value.every((c) => c.status != CautionStatus.confirmed) &&
+          // 서버가 condition_note에 같은 안내를 이미 붙였으면 앱은 따로 띄우지 않음 (겹침 방지)
+          !e.value.any((c) => (c.conditionNote ?? '').contains('제형·농도별')))
+        e.key,
   ];
 }
 
@@ -230,9 +255,11 @@ Map<String, List<DurCaution>> _groupBySeqs(List<DurCaution> list) {
 ///     용량주의 · 기준 확인 중    ⌄
 /// 판정과 섞이지 않게 빨강 대신 주황, '기준 확인 중'은 눈에 띄게 표시
 class _CautionGroup extends StatelessWidget {
-  const _CautionGroup({required this.title, required this.cautions});
+  const _CautionGroup({required this.title, required this.cautions, required this.prefix, required this.sex});
   final String title;
   final List<DurCaution> cautions;
+  final String prefix;
+  final Sex sex;
 
   @override
   Widget build(BuildContext context) {
@@ -285,8 +312,8 @@ class _CautionGroup extends StatelessWidget {
                 expandedCrossAxisAlignment: CrossAxisAlignment.start,
                 iconColor: AppColors.caution,
                 collapsedIconColor: AppColors.caution,
-                title: _CautionTitle(caution: c),
-                children: [_CautionBody(caution: c)],
+                title: _CautionTitle(caution: c, prefix: prefix),
+                children: [_CautionBody(caution: c, prefix: prefix, sex: sex)],
               ),
             ),
           ],
@@ -297,8 +324,9 @@ class _CautionGroup extends StatelessWidget {
 }
 
 class _CautionTitle extends StatelessWidget {
-  const _CautionTitle({required this.caution});
+  const _CautionTitle({required this.caution, required this.prefix});
   final DurCaution caution;
+  final String prefix;
 
   @override
   Widget build(BuildContext context) {
@@ -315,16 +343,155 @@ class _CautionTitle extends StatelessWidget {
         ),
         child: Text(c.status.label, style: TextStyle(color: statusColor, fontSize: 13, fontWeight: FontWeight.w700)),
       ),
+      // 판정 결과는 데이터 연결 상태와 다른 칸 → 모양을 달리해서(채운 배지) 섞이지 않게
+      if (c.applies != null) _AppliesPill(applies: c.applies!, prefix: prefix),
     ]);
   }
 }
 
-class _CautionBody extends StatelessWidget {
-  const _CautionBody({required this.caution});
-  final DurCaution caution;
+/// 임신 중 + 임부금기 해당됨: 결과 위쪽에 눈에 띄게 (판정 배너와는 별도)
+class _PregnancyAlert extends StatelessWidget {
+  const _PregnancyAlert({required this.drugs, required this.prefix});
+  final List<String> drugs;
+  final String prefix;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.dangerBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.danger, width: 2),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Row(children: [
+            Icon(Icons.pregnant_woman, color: AppColors.danger, size: 28),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('임신 중에 금기인 약이 있어요',
+                  style: TextStyle(color: AppColors.danger, fontSize: 19, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          ...drugs.map((d) => Text('· $d', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+          const SizedBox(height: 8),
+          Text(
+            '${prefix == '복용하는 분' ? '복용하는 분이 ' : ''}임신 중으로 입력되어 있어요. '
+            '임의로 먹거나 끊지 말고, 처방한 의사나 약사와 먼저 상담해 주세요.',
+            style: const TextStyle(color: AppColors.danger, fontSize: 15, height: 1.45),
+          ),
+        ]),
+      );
+}
+
+/// 판정에 쓰는 내 정보 한 줄: "임신 여부 · 응답 안 함   바꾸기 >"
+class _MyInfoChip extends StatelessWidget {
+  const _MyInfoChip({required this.icon, required this.label, required this.value, required this.onTap});
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Material(
+          color: Toss.blue50,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(children: [
+                Icon(icon, color: Toss.blue),
+                const SizedBox(width: 10),
+                Text('$label · ', style: const TextStyle(fontSize: 16, color: Toss.grey700)),
+                Expanded(
+                  child: Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Toss.grey900)),
+                ),
+                const Text('바꾸기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Toss.blue)),
+                const Icon(Icons.chevron_right, color: Toss.blue),
+              ]),
+            ),
+          ),
+        ),
+      );
+}
+
+/// 판정 결과 배지: 해당됨(빨강) · 확인 필요(주황) · 해당 안 됨(회색, 초록 쓰지 않음)
+class _AppliesPill extends StatelessWidget {
+  const _AppliesPill({required this.applies, required this.prefix});
+  final Applies applies;
+  final String prefix;
+
+  static (Color, Color) colors(Applies a) => switch (a) {
+        Applies.yes => (Colors.white, AppColors.danger),
+        Applies.check || Applies.unknown => (Colors.white, AppColors.caution),
+        Applies.no => (AppColors.neutral, AppColors.neutralBg),
+      };
 
   @override
   Widget build(BuildContext context) {
+    final (fg, bg) = colors(applies);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Text('$prefix · ${applies.label}', style: TextStyle(color: fg, fontSize: 13, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+class _CautionBody extends ConsumerWidget {
+  const _CautionBody({required this.caution, required this.prefix, required this.sex});
+  final DurCaution caution;
+  final String prefix;
+  final Sex sex;
+
+  /// 판정 결과 상자: applies_note 그대로 + 입력이 없어서(UNKNOWN) 모를 때만 입력을 권함
+  Widget _appliesBox(BuildContext context, WidgetRef ref, DurCaution c) {
+    final t = Theme.of(context).textTheme;
+    final a = c.applies!;
+    final (_, accent) = _AppliesPill.colors(a);
+    final color = a == Applies.no ? AppColors.neutral : accent;
+    Widget? action;
+    if (c.kind == DurKind.pregnancy && sex != Sex.male) {
+      // 입력 전이면 '입력', 입력했으면 지금 값과 함께 '바꾸기'
+      final cur = ref.watch(profileProvider).valueOrNull?.pregnancy ?? Pregnancy.unknown;
+      action = TextButton.icon(
+        onPressed: () => editPregnancy(context, ref, cur),
+        icon: const Icon(Icons.edit_outlined, size: 18),
+        label: Text(cur == Pregnancy.unknown ? '임신 여부 입력' : '임신 여부 바꾸기 (지금: ${cur.label})'),
+      );
+    } else if (a == Applies.unknown && c.kind == DurKind.duration) {
+      action = Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Text('"내 약" → 약 오른쪽 ⋮ → 복용 기간에서 시작일을 입력해 주세요.', style: t.bodySmall?.copyWith(fontSize: 13.5)),
+      );
+    }
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10, bottom: 2),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border(left: BorderSide(color: color, width: 4)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('$prefix · ${a.label}', style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w800)),
+        if (c.appliesNote != null) ...[
+          const SizedBox(height: 4),
+          Text(c.appliesNote!, style: t.bodyMedium?.copyWith(fontSize: 15)),
+        ],
+        if (action != null) action,
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
     final c = caution;
     final rows = <Widget>[];
@@ -355,6 +522,7 @@ class _CautionBody extends StatelessWidget {
         c.ingredients.isEmpty;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(c.hint, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+      if (c.applies != null) _appliesBox(context, ref, c),
       ...rows,
       // 정보가 비어 있어도 '괜찮음'으로 보이지 않게
       if (empty) ...[

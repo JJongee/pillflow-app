@@ -147,6 +147,7 @@ class ApiRepository implements PillRepository {
           'time': time,
           'meal_relation': mealRelation.code,
           'dose_text': doseText,
+          ..._doseFields(doseText),
         });
         return ScheduleItem.fromJson(r.data as Map<String, dynamic>);
       });
@@ -163,6 +164,7 @@ class ApiRepository implements PillRepository {
           'time': time,
           'meal_relation': mealRelation.code,
           'dose_text': doseText,
+          ..._doseFields(doseText),
         });
         return ScheduleItem.fromJson(r.data as Map<String, dynamic>);
       });
@@ -189,6 +191,37 @@ class ApiRepository implements PillRepository {
         final r = await _dio.get('/me/profile');
         return Profile.fromJson(r.data as Map<String, dynamic>);
       });
+
+  @override
+  Future<void> setPregnancy(Pregnancy p) => _call(() async {
+        await _dio.put('/me/profile', data: {'pregnancy': p.code});
+      });
+
+  @override
+  Future<void> setSubject(Subject s) => _call(() async {
+        await _dio.put('/me/profile', data: {'subject': s.code});
+      });
+
+  @override
+  Future<void> setSex(Sex s) => _call(() async {
+        await _dio.put('/me/profile', data: {'sex': s.code});
+      });
+
+  @override
+  Future<UserDrug> setDrugPeriod(int id, {String? startedOn, String? endedOn}) => _call(() async {
+        final r = await _dio.patch('/me/drugs/$id', data: {'started_on': startedOn, 'ended_on': endedOn});
+        return UserDrug.fromJson(r.data as Map<String, dynamic>);
+      });
+
+  /// "1정" → dose_amount 1, dose_unit 정. 서버 단위 목록에 없으면 둘 다 null (dose_text에만 남김)
+  static const _doseUnits = ['정', '캡슐', '포', 'mL', '방울', '매'];
+  static Map<String, dynamic> _doseFields(String? text) {
+    final m = RegExp(r'^\s*(\d+(?:\.\d{1,3})?)\s*(\S+)\s*$').firstMatch(text ?? '');
+    final amount = m == null ? null : double.tryParse(m.group(1)!);
+    final unit = m?.group(2);
+    final ok = amount != null && amount > 0 && amount <= 1000 && _doseUnits.contains(unit);
+    return {'dose_amount': ok ? amount : null, 'dose_unit': ok ? unit : null};
+  }
 
   @override
   Future<void> setBirthDate(DateTime date) => _call(() async {

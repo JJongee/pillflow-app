@@ -147,4 +147,32 @@ void main() {
     await tester.enterText(find.byType(TextField), '2');
     expect(c.text, '2캡슐');
   });
+
+  test('판정 결과(applies)와 임신 여부·복용 기간을 해석한다', () {
+    final c = DurCaution.fromJson({
+      'type': 'PREGNANCY', 'item_seqs': ['1'], 'status': 'CONFIRMED',
+      'applies': 'UNKNOWN', 'applies_note': '임신 여부를 입력하지 않았어요.',
+    });
+    expect(c.applies, Applies.unknown);
+    expect(c.applies!.label, '확인 필요');
+    expect(Applies.fromCode('CHECK')!.label, '확인 필요'); // CHECK·UNKNOWN 모두 확인 필요
+    expect(Applies.fromCode(null), isNull); // 예전 서버
+    expect(Applies.fromCode('NEW')!, Applies.check); // 모르는 값은 확인 필요
+    expect(Profile.fromJson({'pregnancy': 'NOT_PREGNANT'}).pregnancy, Pregnancy.notPregnant);
+    expect(Profile.fromJson({}).pregnancy, Pregnancy.unknown); // 응답 안 함 ≠ 임신 아님
+    final d = UserDrug.fromJson({'id': 1, 'item_seq': '1', 'item_name': 'A', 'started_on': '2026-10-01', 'ended_on': null});
+    expect(d.periodLabel, '복용 2026.10.01 ~');
+  });
+
+  test('약 먹는 분(subject)·성별(sex): 남성만 임신 여부를 묻지 않는다', () {
+    final p = Profile.fromJson({'subject': 'OTHER', 'sex': 'MALE'});
+    expect(p.subject, Subject.other);
+    expect(p.subject.resultPrefix, '복용하는 분');
+    expect(p.asksPregnancy, isFalse);
+    expect(Profile.fromJson({}).asksPregnancy, isTrue); // 성별 모름 → 그래도 물음
+    expect(Profile.fromJson({}).subject.resultPrefix, '내 경우');
+    final r = DurCheckResult.fromJson({'drugs': [], 'findings': [], 'sex': 'FEMALE', 'subject': 'SELF'});
+    expect(r.sex, Sex.female);
+    expect(DurCheckResult.fromJson({'drugs': [], 'findings': []}).sex, isNull); // 예전 서버
+  });
 }

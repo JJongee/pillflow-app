@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
 import '../data/providers.dart';
-import '../widgets/dialogs.dart';
+import '../models/models.dart';
+import 'my_info_screen.dart';
 import 'state_preview_screen.dart';
 
 /// 설정: 태어난 해 · 데이터 출처 · 이용 안내 · 실행 모드 · 로그아웃
@@ -42,11 +43,12 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(children: [
         header('내 정보'),
         ListTile(
-          leading: const Icon(Icons.cake_outlined),
-          title: const Text('생년월일'),
-          subtitle: Text(profile?.display ?? '입력 안 함 · 연령금기를 확인하지 않아요'),
-          trailing: const Icon(Icons.edit_outlined),
-          onTap: () => editBirthDate(context, ref, profile),
+          leading: const Icon(Icons.badge_outlined),
+          title: const Text('내 정보'),
+          // 한눈에: 본인 · 1958.03.15 · 여성 · 임신 아님
+          subtitle: Text(_summary(profile)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyInfoScreen())),
         ),
         header('데이터 출처'),
         const ListTile(
@@ -92,4 +94,16 @@ class SettingsScreen extends ConsumerWidget {
       ]),
     );
   }
+}
+
+/// 설정 목록에 보여 줄 내 정보 요약. 입력한 것만 이어 붙임
+String _summary(Profile? p) {
+  if (p == null) return '불러오는 중이에요';
+  final parts = <String>[
+    if (p.subject != Subject.unknown) p.subject == Subject.self ? '본인' : '다른 사람의 약',
+    if (p.display != null) p.display!,
+    if (p.sex != Sex.unknown) p.sex.label,
+    if (p.asksPregnancy && p.pregnancy != Pregnancy.unknown) p.pregnancy.label,
+  ];
+  return parts.isEmpty ? '아직 입력한 정보가 없어요' : parts.join(' · ');
 }
