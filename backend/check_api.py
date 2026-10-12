@@ -363,6 +363,9 @@ ok = lambda: preg and preg[0]["applies"] == "NO" and "남성" in (preg[0]["appli
 check("남성이면 임신 중이어도 해당 안 됨(NO)", ok, (preg[0]["applies"], preg[0]["applies_note"]) if preg else None)
 check("DUR 응답에 sex·subject가 같이 온다",
       lambda: b.get("sex") == "MALE" and b.get("subject") == "OTHER", (b.get("sex"), b.get("subject")))
+check("판정 문구가 본인 기준 표현('하셨어요')을 쓰지 않는다",
+      lambda: not any("하셨" in (c.get("applies_note") or "") for c in b.get("cautions", [])),
+      [c.get("applies_note") for c in b.get("cautions", [])])
 check("남성에게는 임신 여부를 입력하라고 하지 않는다",
       lambda: not any("임신 여부" in n for n in b.get("notes", [])), b.get("notes"))
 s, b = call("PUT", "/me/profile", {"sex": "FEMALE"}, token_a)
@@ -465,6 +468,37 @@ for label, profile in [("성인", {"birth_date": "1990-05-05"}),
     check(f"성인 기준 용법 + 사용자 {label} → 확인 필요", ok, (s, one.get("confidence"), one.get("warnings")))
 call("DELETE", f"/me/drugs/{adult_id}", token=token_a)
 call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
+
+# 자동 제안 중복 저장 막기 (손채은 10/12)
+print("[13-1] 제안 중복 저장 막기")
+s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [sug_drug]}, token_a)
+one = b["suggestions"][0] if isinstance(b, dict) and b.get("suggestions") else {}
+slots = one.get("slots") or []
+check("저장 전에는 모든 제안이 saved=false", lambda: slots and all(x["saved"] is False and x["schedule_id"] is None for x in slots), slots)
+first = slots[0] if slots else {"time": "08:00", "meal_relation": "NONE"}
+s, b = call("POST", "/me/schedules", {"user_drug_id": sug_drug, "time": first["time"], "meal_relation": first["meal_relation"]}, token_a)
+made = b.get("id") if isinstance(b, dict) else None
+check("제안 한 개 저장 → 201", lambda: s == 201, (s, b))
+s, b = call("POST", "/me/schedules", {"user_drug_id": sug_drug, "time": first["time"], "meal_relation": first["meal_relation"]}, token_a)
+check("같은 약·같은 시각 다시 저장 → 409 DUPLICATE", lambda: s == 409 and b.get("code") == "DUPLICATE", (s, b))
+s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [sug_drug]}, token_a)
+slots = b["suggestions"][0]["slots"] if isinstance(b, dict) and b.get("suggestions") else []
+hit = [x for x in slots if x["time"] == first["time"]]
+check("저장한 시각은 saved=true + schedule_id", lambda: hit and hit[0]["saved"] and hit[0]["schedule_id"] == made, hit)
+check("저장 안 한 시각은 saved=false 유지", lambda: all(x["saved"] is False for x in slots if x["time"] != first["time"]), slots)
+s, b = call("POST", "/me/schedules", {"user_drug_id": sug_drug, "time": "23:30", "meal_relation": "NONE"}, token_a)
+spare = b.get("id") if isinstance(b, dict) else None
+s, b = call("PATCH", f"/me/schedules/{spare}", {"time": first["time"]}, token_a)
+check("이미 있는 시각으로 옮기면 → 409 DUPLICATE", lambda: s == 409 and b.get("code") == "DUPLICATE", (s, b))
+s, b = call("PATCH", f"/me/schedules/{spare}", {"time": "23:30"}, token_a)
+check("같은 시각 그대로 두는 수정은 막지 않음", lambda: s == 200, (s, b))
+call("DELETE", f"/me/schedules/{spare}", token=token_a)
+s, b = call("DELETE", f"/me/schedules/{made}", token=token_a)
+check("시간표를 지우면 다시 saved=false", lambda: s == 204, s)
+s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [sug_drug]}, token_a)
+slots = b["suggestions"][0]["slots"] if isinstance(b, dict) and b.get("suggestions") else []
+check("삭제 후 제안은 모두 saved=false", lambda: slots and all(x["saved"] is False for x in slots), slots)
+
 s, b = call("DELETE", f"/me/drugs/{sug_drug}", token=token_a)
 check("제안 점검용 약 정리 → 204", lambda: s == 204, s)
 

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user
 from db import get_db
 from drugs import DRUG_BY_SEQ, clean
-from models import User, UserDrug
+from models import Schedule, User, UserDrug
 from schedules import TIME_PATTERN, item_name_of
 
 router = APIRouter(prefix="/api/v1/me", tags=["schedules"])
@@ -42,8 +42,8 @@ MEAL_SLOTS = {"breakfast", "lunch", "dinner"}  # 식사 관계로 시각을 옮�
 # (손채은 10/11 검수에서 '바릅니다'만 쓴 약 337건이 먹는 약으로 잘못 분류된 것을 찾음)
 # '치질에는'의 '질에', '~한 점이'의 '점이', '6주입니다'의 '주입'처럼
 # 다른 뜻으로 읽히는 말은 넣지 않거나 활용형까지 함께 적는다.
-NOT_ORAL = (r"바르|바릅|발라|발랐|붙이|붙입|부착|점안|안약|점비|눈에|귀에 넣|좌제|질정|질 ?내|삽입|주입합|주입하|흡입|"
-            r"주사합|주사하|피하주사|근육주사|정맥주사|도포|뿌리|뿌립|분무|패치|씌우|씌웁|가글|양치|헹구|헹굽|"
+NOT_ORAL = (r"바르|바릅|발라|발랐|붙이|붙입|붙여|붙인|붙일|붙였|부착|점안|안약|점비|눈에|귀에 넣|좌제|질정|질 ?내|삽입|주입합|주입하|흡입|"
+            r"주사합|주사하|피하주사|근육주사|정맥주사|도포|뿌리|뿌립|분무|패치|패취|씌우|씌웁|가글|양치|헹구|헹굽|"
             r"관장|환부|항문|피부에|두피")
 # '하지 마십시오'(말다)와 '마십니다'(마시다)를 구분해야 해서 '마십'만 쓰지 않는다.
 # '삼키지 마십시오'(바르는 약에 흔한 문구)가 먹는 약으로 읽히지 않게 활용형을 적는다.
@@ -95,6 +95,9 @@ class SuggestRequest(BaseModel):
 class SuggestSlot(BaseModel):
     time: str
     meal_relation: str
+    # 이 약·이 시각의 시간표가 이미 있으면 true. 앱이 '저장됨'으로 표시하고 다시 고르지 못하게 한다. (손채은 10/12)
+    saved: bool = False
+    schedule_id: int | None = None  # 저장돼 있으면 그 시간표 번호
 
 
 class DrugSuggestion(BaseModel):
@@ -320,10 +323,20 @@ def suggest_schedules(
         stmt = stmt.where(UserDrug.id.in_(body.user_drug_ids))
     my_drugs = list(db.scalars(stmt))
 
+    # 이미 저장된 시간표 (약 번호, 시각) → 시간표 번호
+    saved_map = {
+        (row.user_drug_id, row.time): row.id
+        for row in db.scalars(select(Schedule).where(Schedule.user_id == user.id))
+    }
+
     suggestions = []
     for ud in my_drugs:
         drug = DRUG_BY_SEQ.get(ud.item_seq) or {}
         result = suggest_one(drug.get("use_method"), base_times, age_range)
+        for slot in result["slots"]:
+            sid = saved_map.get((ud.id, slot["time"]))
+            slot["saved"] = sid is not None
+            slot["schedule_id"] = sid
         suggestions.append({
             "user_drug_id": ud.id,
             "item_seq": ud.item_seq,

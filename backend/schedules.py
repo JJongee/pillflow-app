@@ -105,6 +105,12 @@ def add_schedule(
     db: Session = Depends(get_db),
 ):
     ud = get_own_drug(db, user, body.user_drug_id)  # 내 약이 아니면 404
+    # 같은 약 + 같은 시각은 한 번만. 자동 제안 화면에서 같은 항목을 두 번 저장하는 일을 막는다. (손채은 10/12)
+    if db.scalar(select(Schedule).where(
+            Schedule.user_id == user.id,
+            Schedule.user_drug_id == ud.id,
+            Schedule.time == body.time)) is not None:
+        raise HTTPException(409, {"detail": "이미 같은 시각에 이 약의 시간표가 있어요.", "code": "DUPLICATE"})
     s = Schedule(
         user_id=user.id,
         user_drug_id=ud.id,
@@ -128,7 +134,14 @@ def update_schedule(
     db: Session = Depends(get_db),
 ):
     s, ud = get_own_schedule(db, user, schedule_id)
-    for key, value in body.model_dump(exclude_unset=True).items():
+    sent = body.model_dump(exclude_unset=True)
+    # 시각을 옮겨서 중복이 생기는 것도 막는다
+    if sent.get("time") and sent["time"] != s.time and db.scalar(select(Schedule).where(
+            Schedule.user_id == user.id,
+            Schedule.user_drug_id == s.user_drug_id,
+            Schedule.time == sent["time"])) is not None:
+        raise HTTPException(409, {"detail": "이미 같은 시각에 이 약의 시간표가 있어요.", "code": "DUPLICATE"})
+    for key, value in sent.items():
         if value is None and key not in ("dose_text", "dose_amount", "dose_unit"):
             continue  # 시간·식사 관계는 비울 수 없다. 복용량은 null로 지울 수 있다.
         setattr(s, key, value)
