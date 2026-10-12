@@ -555,17 +555,11 @@ enum SuggestConfidence {
 class SuggestSlot {
   final String time; // HH:mm
   final MealRelation mealRelation;
-
-  /// 서버가 알려 주는 '이미 시간표에 있음' (없으면 null → 앱이 시간표와 비교)
-  final bool? saved;
-  final int? scheduleId;
-  const SuggestSlot({required this.time, required this.mealRelation, this.saved, this.scheduleId});
+  const SuggestSlot({required this.time, required this.mealRelation});
 
   factory SuggestSlot.fromJson(Map<String, dynamic> j) => SuggestSlot(
         time: j['time'] as String,
         mealRelation: MealRelation.fromCode(j['meal_relation'] as String?),
-        saved: j['saved'] is bool ? j['saved'] as bool : null,
-        scheduleId: j['schedule_id'] is int ? j['schedule_id'] as int : null,
       );
 }
 

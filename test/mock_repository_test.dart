@@ -7,7 +7,8 @@ import 'package:pillflow/models/models.dart';
 const aspirin = '200008591'; // 바이엘아스피린정500밀리그람
 const ketorolac = 'EDI-649802851'; // 케토신주사 (DUR 전용 품목)
 const geborin = '197900277'; // 게보린정 (15세 미만 연령금기)
-const hwalmyungsu = '195700020'; // 활명수 (DUR 데이터에 없음)
+// 목업 DUR 데이터에 없는 약 (시연 약 13개는 export_mock_dur.py로 서버 값이 들어가므로 그 밖의 약을 씀)
+const hwalmyungsu = '198900667'; // 까스활명수큐액
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized(); // rootBundle 로 assets 읽기
