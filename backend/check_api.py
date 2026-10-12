@@ -404,6 +404,26 @@ dcs = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstanc
 check("3일 복용 → 기준 안(NO)", lambda: dcs and any(c["applies"] == "NO" for c in dcs), [c["applies"] for c in dcs])
 s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"ended_on": (dt.date.today() - dt.timedelta(days=5)).isoformat()}, token_a)
 check("종료일이 시작일보다 빠르면 422", lambda: s == 422, s)
+# 기간은 약마다 따로 저장된다 (김서현 검수표 U06)
+s, b = call("POST", "/me/drugs", {"item_seq": "199302061"}, token_a)  # 듀오락스정, 역시 기준 7일
+dur_drug2 = b.get("id") if isinstance(b, dict) else None
+far = (dt.date.today() - dt.timedelta(days=40)).isoformat()
+near = (dt.date.today() - dt.timedelta(days=2)).isoformat()
+call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": far, "ended_on": None}, token_a)
+s, b = call("PATCH", f"/me/drugs/{dur_drug2}", {"started_on": near, "ended_on": None}, token_a)
+check("두 번째 약에 다른 기간 저장", lambda: s == 200 and b["started_on"] == near, (s, b))
+s, b = call("GET", "/me/drugs", token=token_a)
+mine = {x["id"]: x for x in b} if isinstance(b, list) else {}
+ok = lambda: mine.get(dur_drug, {}).get("started_on") == far and mine.get(dur_drug2, {}).get("started_on") == near
+check("약마다 기간이 따로 남는다 (서로 덮어쓰지 않음)", ok,
+      [(mine.get(dur_drug, {}).get("started_on"), mine.get(dur_drug2, {}).get("started_on"))])
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483", "199302061"]}, token_a)
+d1 = [c for c in b.get("cautions", []) if c["type"] == "DURATION" and "197600483" in c["item_seqs"]] if isinstance(b, dict) else []
+d2 = [c for c in b.get("cautions", []) if c["type"] == "DURATION" and "199302061" in c["item_seqs"]] if isinstance(b, dict) else []
+ok = lambda: d1 and d2 and d1[0]["applies"] == "CHECK" and d2[0]["applies"] == "NO"
+check("판정도 약마다 자기 기간으로 따로 난다", ok,
+      [(d1[0]["applies"] if d1 else None), (d2[0]["applies"] if d2 else None)])
+call("DELETE", f"/me/drugs/{dur_drug2}", token=token_a)
 s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": None, "ended_on": None}, token_a)
 check("복용 기간을 null로 지울 수 있음", lambda: s == 200 and b["started_on"] is None, (s, b))
 call("DELETE", f"/me/drugs/{dur_drug}", token=token_a)
