@@ -104,8 +104,9 @@ void main() {
     await r.addMyDrug('201706199'); // 코메키나캡슐 먼저
     await r.addMyDrug('199300273'); // 멕시롱액(돔페리돈)
     final res = await r.checkDur();
-    expect(res.findings.single.type, FindingType.combination);
-    expect(res.findings.single.ingredients, isEmpty); // 목업엔 성분 정보 없음 → 화면에서 줄 숨김
+    // 금기 사유가 여러 개면 사유마다 한 건씩 (서버와 같음)
+    expect(res.findings, isNotEmpty);
+    expect(res.findings.every((f) => f.type == FindingType.combination), isTrue);
     expect(res.drugs.every((d) => d.verdict == Verdict.contraindicated), isTrue);
   });
 
@@ -113,8 +114,8 @@ void main() {
     final r = MockRepository();
     await r.addMyDrug('202106092'); // 타이레놀정500밀리그람
     final res = await r.checkDur();
-    expect(res.cautions.single.typeCode, 'DOSE');
-    expect(res.cautions.single.status, CautionStatus.confirmed);
+    final dose = res.cautions.firstWhere((c) => c.typeCode == 'DOSE');
+    expect(dose.status, CautionStatus.confirmed);
     expect(res.findings, isEmpty);
     expect(res.drugs.single.verdict, isNot(Verdict.contraindicated));
   });
@@ -171,7 +172,7 @@ void main() {
     expect(u.startedOn, '2026-10-01');
     expect(u.endedOn, isNull);
     final res = await r.checkDur();
-    expect(res.cautions.single.applies, Applies.check); // 용량주의는 항상 확인 필요
+    expect(res.cautions.firstWhere((c) => c.typeCode == 'DOSE').applies, Applies.check); // 용량주의는 항상 확인 필요
   });
 
   test('약 먹는 분·성별 저장, DUR 결과에도 함께 온다', () async {
@@ -185,5 +186,17 @@ void main() {
     final res = await r.checkDur();
     expect(res.sex, Sex.male);
     expect(res.subject, Subject.other);
+  });
+
+  test('목업에서도 임신 여부에 따라 임부금기 판정이 바뀐다 (사노바겔)', () async {
+    final r = MockRepository();
+    await r.addMyDrug('201308592'); // 사노바겔(리도카인): 임부금기 2등급
+    Future<Applies?> applies() async =>
+        (await r.checkDur()).cautions.firstWhere((c) => c.kind == DurKind.pregnancy).applies;
+    expect(await applies(), Applies.unknown);
+    await r.setPregnancy(Pregnancy.pregnant);
+    expect(await applies(), Applies.yes);
+    await r.setSex(Sex.male);
+    expect(await applies(), Applies.no);
   });
 }

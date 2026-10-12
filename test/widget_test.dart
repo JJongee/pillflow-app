@@ -106,6 +106,10 @@ void main() {
     });
     expect(r.suggestions.single.confidence, SuggestConfidence.confirm);
     expect(r.suggestions.single.slots.single.time, '08:00');
+    expect(r.suggestions.single.slots.single.saved, isNull); // 예전 서버: 앱이 시간표와 비교
+    final saved = SuggestSlot.fromJson({'time': '08:00', 'meal_relation': 'AFTER', 'saved': true, 'schedule_id': 7});
+    expect(saved.saved, isTrue);
+    expect(saved.scheduleId, 7);
     expect(r.notes, isNotEmpty);
   });
 
