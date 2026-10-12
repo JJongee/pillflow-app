@@ -651,8 +651,12 @@ enum Subject {
 
   static Subject fromCode(String? c) => Subject.values.firstWhere((e) => e.code == c, orElse: () => Subject.unknown);
 
-  /// 판정 결과 앞에 붙는 말: 본인·모름 → "내 경우", 다른 사람 → "복용하는 분"
-  String get resultPrefix => this == Subject.other ? '복용하는 분' : '내 경우';
+  /// 판정 결과 앞에 붙는 말: 본인 "내 경우", 다른 사람 "복용하는 분", 응답 안 함 "복용 대상" (채은 10/12)
+  String get resultPrefix => switch (this) {
+        Subject.self => '내 경우',
+        Subject.other => '복용하는 분',
+        Subject.unknown => '복용 대상',
+      };
 }
 
 /// 성별 (선택). 남성이면 임신 여부를 묻지 않음

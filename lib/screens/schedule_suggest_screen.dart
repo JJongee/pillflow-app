@@ -20,10 +20,13 @@ class ScheduleSuggestScreen extends ConsumerStatefulWidget {
 }
 
 class _SlotState {
-  _SlotState(this.time, this.meal, this.selected);
+  _SlotState(this.time, this.meal, this.selected, {this.saved = false});
   TimeOfDay time;
   MealRelation meal;
   bool selected;
+
+  /// 이미 시간표에 같은 약·같은 시각이 있음 → 체크된 채 잠금, '저장됨' 표시 (중복 등록 방지, 채은 10/12)
+  final bool saved;
 }
 
 class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
@@ -31,6 +34,7 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
   final Map<int, List<_SlotState>> _slots = {};
   final Map<int, TextEditingController> _dose = {};
   Map<int, int> _existing = {}; // user_drug_id → 이미 있는 시간표 개수
+  Map<int, Set<String>> _savedTimes = {}; // user_drug_id → 이미 저장된 시각(HH:mm)
   bool _saving = false;
 
   Future<ScheduleSuggestResult> _load() async {
@@ -38,16 +42,23 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
     final schedules = await repo.getSchedules();
     final res = await repo.suggestSchedules();
     final existing = <int, int>{};
+    final savedTimes = <int, Set<String>>{};
     for (final s in schedules) {
       existing[s.userDrugId] = (existing[s.userDrugId] ?? 0) + 1;
+      savedTimes.putIfAbsent(s.userDrugId, () => {}).add(s.time);
     }
     _existing = existing;
+    _savedTimes = savedTimes;
     _slots.clear();
     for (final s in res.suggestions) {
       // 확실한 제안이고 아직 시간표가 없는 약만 미리 선택
       final preselect = s.confidence == SuggestConfidence.high && (existing[s.userDrugId] ?? 0) == 0;
+      final done = savedTimes[s.userDrugId] ?? const <String>{};
       _slots[s.userDrugId] = [
-        for (final slot in s.slots) _SlotState(_parse(slot.time), slot.mealRelation, preselect),
+        for (final slot in s.slots)
+          done.contains(slot.time)
+              ? _SlotState(_parse(slot.time), slot.mealRelation, false, saved: true)
+              : _SlotState(_parse(slot.time), slot.mealRelation, preselect),
       ];
       _dose.putIfAbsent(s.userDrugId, TextEditingController.new);
     }
@@ -79,16 +90,22 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
     if (saved && mounted) setState(() => _future = _load());
   }
 
-  int get _selectedCount => _slots.values.expand((l) => l).where((s) => s.selected).length;
+  int get _selectedCount => _slots.values.expand((l) => l).where((s) => s.selected && !s.saved).length;
 
   Future<void> _save() async {
     setState(() => _saving = true);
     final repo = ref.read(repositoryProvider);
-    var saved = 0;
+    var saved = 0, skipped = 0;
     try {
       for (final entry in _slots.entries) {
         final dose = _dose[entry.key]?.text.trim();
-        for (final s in entry.value.where((s) => s.selected)) {
+        // 시각을 바꿔서 이미 있는 시각과 겹치거나, 같은 시각을 두 번 고른 경우는 건너뜀
+        final taken = {...?_savedTimes[entry.key]};
+        for (final s in entry.value.where((s) => s.selected && !s.saved)) {
+          if (!taken.add(_fmt(s.time))) {
+            skipped++;
+            continue;
+          }
           await repo.addSchedule(
             userDrugId: entry.key,
             time: _fmt(s.time),
@@ -101,7 +118,7 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
       ref.invalidate(schedulesProvider);
       ref.invalidate(intakesProvider(todayString()));
       if (!mounted) return;
-      showSnack(context, '복용 시간 $saved개를 저장했어요.');
+      showSnack(context, skipped > 0 ? '복용 시간 $saved개를 저장했어요. 이미 있는 시간 $skipped개는 뺐어요.' : '복용 시간 $saved개를 저장했어요.');
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -275,7 +292,7 @@ class _SuggestionCard extends StatelessWidget {
           ]),
           if (existing > 0) ...[
             const SizedBox(height: 4),
-            Text('이미 시간표에 $existing개 있어요. 겹치지 않게 확인해 주세요.', style: t.bodySmall),
+            Text('시간표에 $existing개 있어요. 이미 저장된 시간은 \'저장됨\'으로 표시되고 다시 저장되지 않아요.', style: t.bodySmall),
           ],
           // 확인이 필요한 이유를 먼저 보여 줌
           ...s.warnings.map((w) => Padding(
@@ -321,14 +338,17 @@ class _SlotRow extends StatelessWidget {
         padding: const EdgeInsets.only(top: 4),
         child: Row(children: [
           Checkbox(
-            value: slot.selected,
-            onChanged: (v) {
-              slot.selected = v ?? false;
-              onChanged();
-            },
+            value: slot.saved || slot.selected,
+            // 저장된 칸은 잠금 (바꾸려면 시간표 탭에서 수정·삭제)
+            onChanged: slot.saved
+                ? null
+                : (v) {
+                    slot.selected = v ?? false;
+                    onChanged();
+                  },
           ),
           TextButton(
-            onPressed: () async {
+            onPressed: slot.saved ? null : () async {
               final picked = await showTimePicker(context: context, initialTime: slot.time);
               if (picked != null) {
                 slot.time = picked;
@@ -344,13 +364,23 @@ class _SlotRow extends StatelessWidget {
             items: MealRelation.values
                 .map((m) => DropdownMenuItem(value: m, child: Text(m.label, style: const TextStyle(fontSize: 16))))
                 .toList(),
-            onChanged: (m) {
-              if (m != null) {
-                slot.meal = m;
-                onChanged();
-              }
-            },
+            onChanged: slot.saved
+                ? null
+                : (m) {
+                    if (m != null) {
+                      slot.meal = m;
+                      onChanged();
+                    }
+                  },
           ),
+          if (slot.saved) ...[
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: Toss.grey100, borderRadius: BorderRadius.circular(999)),
+              child: const Text('저장됨', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Toss.grey700)),
+            ),
+          ],
         ]),
       );
 }

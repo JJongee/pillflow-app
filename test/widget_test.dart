@@ -170,7 +170,8 @@ void main() {
     expect(p.subject.resultPrefix, '복용하는 분');
     expect(p.asksPregnancy, isFalse);
     expect(Profile.fromJson({}).asksPregnancy, isTrue); // 성별 모름 → 그래도 물음
-    expect(Profile.fromJson({}).subject.resultPrefix, '내 경우');
+    expect(Profile.fromJson({}).subject.resultPrefix, '복용 대상'); // 응답 안 함은 중립 표현
+    expect(Subject.self.resultPrefix, '내 경우');
     final r = DurCheckResult.fromJson({'drugs': [], 'findings': [], 'sex': 'FEMALE', 'subject': 'SELF'});
     expect(r.sex, Sex.female);
     expect(DurCheckResult.fromJson({'drugs': [], 'findings': []}).sex, isNull); // 예전 서버
