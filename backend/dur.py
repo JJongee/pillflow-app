@@ -146,11 +146,15 @@ NOTE_PREG_PENDING_APPLY = "임신 중으로 입력되어 있는데, 이 약의 �
 NOTE_PREG_NOT = "임신 중이 아닌 것으로 입력되어 있어요. 그래도 참고로 보여 드려요."
 NOTE_PREG_UNKNOWN = "임신 여부를 입력하면 해당되는지 알려 드릴 수 있어요."
 NOTE_PREG_MALE = "성별이 남성으로 입력되어 있어 해당되지 않아요. 그래도 참고로 보여 드려요."
-NOTE_DURATION_OVER = "복용한 기간이 {days}일로 기준({limit}일)을 넘었어요. 의사·약사와 상담하세요."
+NOTE_PREG_CONFLICT_INPUT = ("성별은 남성, 임신 여부는 임신 중으로 입력되어 있어요. "
+                            "복용자 정보를 다시 확인해 주세요. 확인 전까지는 해당 여부를 판단하지 않아요.")
+# 입력한 시작일·종료일만으로는 중간에 끊었는지 알 수 없어서, 기준을 넘어도 '해당됨'으로 확정하지 않는다. (김서현 10/13)
+NOTE_DURATION_OVER = ("입력한 날짜 기준 경과기간이 {days}일로 기준({limit}일)을 넘었어요. "
+                      "계속 복용했는지 확인이 필요하니 의사·약사와 상담하세요.")
 # 종료일이 없으면 아직 먹는 중인지 알 수 없다. 기간이 길어도 확정하지 않는다. (손채은 10/11)
-NOTE_DURATION_MAYBE = ("시작일부터 오늘까지 {days}일이고 기준은 {limit}일이에요. "
+NOTE_DURATION_MAYBE = ("입력한 시작일부터 오늘까지 경과기간이 {days}일이고 기준은 {limit}일이에요. "
                        "복용을 이미 멈췄다면 해당되지 않을 수 있어요. 종료일을 입력하거나 의사·약사와 확인해 주세요.")
-NOTE_DURATION_WITHIN = "복용한 기간은 {days}일로 기준({limit}일) 안이에요."
+NOTE_DURATION_WITHIN = "입력한 날짜 기준 경과기간은 {days}일로 기준({limit}일) 안이에요."
 NOTE_DURATION_CHECK = "기간 기준이 숫자로 확정되지 않아 비교하지 못했어요. 원문을 확인해 주세요."
 NOTE_DURATION_UNKNOWN = "복용 시작일을 입력하면 기간을 비교해 드릴 수 있어요."
 NOTE_ELDERLY_PENDING = "노인주의 기준을 확인 중이에요. 고령이라면 의사·약사와 상담하세요."
@@ -349,6 +353,8 @@ def judge_pregnancy(status, reason, pregnancy, sex="UNKNOWN"):
     """임신 여부로 임부금기가 해당되는지 본다. (applies, 안내)
     성별이 남성이면 임신 여부를 묻지 않고 해당 없음으로 본다. (고연수 10/11)"""
     if sex == "MALE":
+        if pregnancy == "PREGNANT":  # 입력이 서로 어긋난다. 저장값은 건드리지 않고 다시 확인을 받는다. (김서현 10/13)
+            return "CHECK", NOTE_PREG_CONFLICT_INPUT
         return "NO", NOTE_PREG_MALE
     if pregnancy not in ("PREGNANT", "NOT_PREGNANT"):
         return "UNKNOWN", NOTE_PREG_UNKNOWN
@@ -373,7 +379,9 @@ def taken_days(period, today):
 def judge_duration(status, rules, period, today):
     """복용 기간과 DUR 투여기간 기준을 비교한다. (applies, 안내)
     시작일이 없거나 기준이 숫자로 확정되지 않았으면 판정하지 않는다.
-    종료일이 없으면 지금도 먹는 중인지 알 수 없어서, 기간이 길어도 확정하지 않는다."""
+    종료일이 없으면 지금도 먹는 중인지 알 수 없고, 종료일이 있어도 중간에 끊었는지는 알 수 없다.
+    그래서 경과기간이 기준을 넘어도 '해당됨(YES)'으로 확정하지 않고 '확인 필요(CHECK)'로 둔다. (김서현 10/13)
+    숫자 비교는 > 연산이다. 기준과 같은 날은 미초과. (김서현 10/13)"""
     days = taken_days(period, today)
     if days is None:
         return "UNKNOWN", NOTE_DURATION_UNKNOWN
@@ -386,7 +394,7 @@ def judge_duration(status, rules, period, today):
         return "NO", NOTE_DURATION_WITHIN.format(days=days, limit=limit)
     if (period or (None, None))[1] is None:  # 종료일을 모른다
         return "CHECK", NOTE_DURATION_MAYBE.format(days=days, limit=limit)
-    return "YES", NOTE_DURATION_OVER.format(days=days, limit=limit)
+    return "CHECK", NOTE_DURATION_OVER.format(days=days, limit=limit)  # 종료일이 있어도 연속 복용은 확인 못 한다
 
 
 def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=(),

@@ -359,8 +359,17 @@ s, b = call("PUT", "/me/profile", {"pregnancy": "PREGNANT"}, token_a)
 check("성별만 바꿔도 임신 여부는 남아 있음", lambda: s == 200 and b["sex"] == "MALE", (s, b))
 s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
 preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
+ok = lambda: preg and preg[0]["applies"] == "CHECK" and "다시 확인" in (preg[0]["applies_note"] or "")
+check("남성 + 임신 중 저장 → 입력 충돌이라 CHECK (NO로 단정 안 함)", ok, (preg[0]["applies"], preg[0]["applies_note"]) if preg else None)
+s, b = call("GET", "/me/profile", token=token_a)
+check("충돌이어도 저장된 임신 여부는 그대로 PREGNANT", lambda: b.get("pregnancy") == "PREGNANT", b.get("pregnancy"))
+s, b = call("PUT", "/me/profile", {"pregnancy": "NOT_PREGNANT"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
+preg = [c for c in b.get("cautions", []) if c["type"] == "PREGNANCY"] if isinstance(b, dict) else []
 ok = lambda: preg and preg[0]["applies"] == "NO" and "남성" in (preg[0]["applies_note"] or "")
-check("남성이면 임신 중이어도 해당 안 됨(NO)", ok, (preg[0]["applies"], preg[0]["applies_note"]) if preg else None)
+check("남성 + 임신 아님 → 해당 안 됨(NO)", ok, (preg[0]["applies"], preg[0]["applies_note"]) if preg else None)
+s, b = call("PUT", "/me/profile", {"pregnancy": "PREGNANT"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["199000939"]}, token_a)
 check("DUR 응답에 sex·subject가 같이 온다",
       lambda: b.get("sex") == "MALE" and b.get("subject") == "OTHER", (b.get("sex"), b.get("subject")))
 check("판정 문구가 본인 기준 표현('하셨어요')을 쓰지 않는다",
@@ -394,8 +403,9 @@ check("41일 복용인데 종료일을 모르면 확정하지 않음(CHECK)", ok
 s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"ended_on": dt.date.today().isoformat()}, token_a)
 s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)
 dcs = [c for c in b.get("cautions", []) if c["type"] == "DURATION"] if isinstance(b, dict) else []
-ok = lambda: dcs and any(c["applies"] == "YES" and "넘었어요" in (c["applies_note"] or "") for c in dcs)
-check("종료일까지 넣으면 기준 초과로 확정(YES)", ok, [(c["applies"], c["applies_note"]) for c in dcs])
+ok = lambda: dcs and any(c["applies"] == "CHECK" and "경과기간" in (c["applies_note"] or "") and "넘었어요" in (c["applies_note"] or "") for c in dcs)
+check("종료일이 있어도 초과는 CHECK (연속 복용 미확인, YES 아님)", ok, [(c["applies"], c["applies_note"]) for c in dcs])
+check("투여기간 판정에 YES가 없다", lambda: not any(c["applies"] == "YES" for c in dcs), [c["applies"] for c in dcs])
 call("PATCH", f"/me/drugs/{dur_drug}", {"ended_on": None}, token_a)
 recent = (dt.date.today() - dt.timedelta(days=2)).isoformat()
 s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": recent}, token_a)
