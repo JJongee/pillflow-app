@@ -106,6 +106,10 @@ void main() {
     });
     expect(r.suggestions.single.confidence, SuggestConfidence.confirm);
     expect(r.suggestions.single.slots.single.time, '08:00');
+    expect(r.suggestions.single.slots.single.saved, isNull); // 예전 서버: 앱이 시간표와 비교
+    final saved = SuggestSlot.fromJson({'time': '08:00', 'meal_relation': 'AFTER', 'saved': true, 'schedule_id': 7});
+    expect(saved.saved, isTrue);
+    expect(saved.scheduleId, 7);
     expect(r.notes, isNotEmpty);
   });
 
@@ -169,6 +173,8 @@ void main() {
     expect(p.subject, Subject.other);
     expect(p.subject.resultPrefix, '복용하는 분');
     expect(p.asksPregnancy, isFalse);
+    // 남성인데 임신 중이 저장돼 있으면 고칠 수 있게 보여 줌
+    expect(Profile.fromJson({'sex': 'MALE', 'pregnancy': 'PREGNANT'}).asksPregnancy, isTrue);
     expect(Profile.fromJson({}).asksPregnancy, isTrue); // 성별 모름 → 그래도 물음
     expect(Profile.fromJson({}).subject.resultPrefix, '복용 대상'); // 응답 안 함은 중립 표현
     expect(Subject.self.resultPrefix, '내 경우');

@@ -440,6 +440,8 @@ class MockRepository implements PillRepository {
     Applies a;
     String note;
     switch (c.kind) {
+      case DurKind.pregnancy when _sex == Sex.male && _pregnancy == Pregnancy.pregnant:
+        (a, note) = (Applies.check, '복용자 정보를 다시 확인해 주세요.'); // 남성 + 임신 중 (서버 10/14)
       case DurKind.pregnancy when _sex == Sex.male:
         (a, note) = (Applies.no, '남성으로 입력해서 해당되지 않아요. 그래도 참고로 보여 드려요.');
       case DurKind.pregnancy:

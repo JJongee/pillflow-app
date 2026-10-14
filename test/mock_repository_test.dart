@@ -198,6 +198,8 @@ void main() {
     await r.setPregnancy(Pregnancy.pregnant);
     expect(await applies(), Applies.yes);
     await r.setSex(Sex.male);
+    expect(await applies(), Applies.check); // 남성 + 임신 중 → 복용자 정보 다시 확인
+    await r.setPregnancy(Pregnancy.notPregnant);
     expect(await applies(), Applies.no);
   });
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
 import '../data/providers.dart';
+import '../data/repository.dart';
 import '../models/models.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/dose_field.dart';
@@ -56,7 +57,8 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
       final done = savedTimes[s.userDrugId] ?? const <String>{};
       _slots[s.userDrugId] = [
         for (final slot in s.slots)
-          done.contains(slot.time)
+          // 서버 saved 값을 우선, 없으면 내 시간표와 비교
+          (slot.saved ?? done.contains(slot.time))
               ? _SlotState(_parse(slot.time), slot.mealRelation, false, saved: true)
               : _SlotState(_parse(slot.time), slot.mealRelation, preselect),
       ];
@@ -106,13 +108,19 @@ class _ScheduleSuggestScreenState extends ConsumerState<ScheduleSuggestScreen> {
             skipped++;
             continue;
           }
-          await repo.addSchedule(
-            userDrugId: entry.key,
-            time: _fmt(s.time),
-            mealRelation: s.meal,
-            doseText: (dose == null || dose.isEmpty) ? null : dose,
-          );
-          saved++;
+          try {
+            await repo.addSchedule(
+              userDrugId: entry.key,
+              time: _fmt(s.time),
+              mealRelation: s.meal,
+              doseText: (dose == null || dose.isEmpty) ? null : dose,
+            );
+            saved++;
+          } on RepoException catch (e) {
+            // 서버도 같은 약+같은 시각은 409로 막음 → 오류 대신 건너뜀
+            if (e.code != 'DUPLICATE') rethrow;
+            skipped++;
+          }
         }
       }
       ref.invalidate(schedulesProvider);

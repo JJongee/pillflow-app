@@ -78,7 +78,8 @@ class DurResultScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               // 판정에 쓰는 내 정보를 위에 모아 보여 주고 바로 바꿀 수 있게
-              if (sex != Sex.male && cautions.any((c) => c.kind == DurKind.pregnancy))
+              if ((sex != Sex.male || profile?.pregnancy == Pregnancy.pregnant) &&
+                  cautions.any((c) => c.kind == DurKind.pregnancy))
                 _MyInfoChip(
                   icon: Icons.pregnant_woman_outlined,
                   label: '임신 여부',
@@ -456,7 +457,8 @@ class _CautionBody extends ConsumerWidget {
     final (_, accent) = _AppliesPill.colors(a);
     final color = a == Applies.no ? AppColors.neutral : accent;
     Widget? action;
-    if (c.kind == DurKind.pregnancy && sex != Sex.male) {
+    final curPreg = ref.watch(profileProvider).valueOrNull?.pregnancy;
+    if (c.kind == DurKind.pregnancy && (sex != Sex.male || curPreg == Pregnancy.pregnant)) {
       // 입력 전이면 '입력', 입력했으면 지금 값과 함께 '바꾸기'
       final cur = ref.watch(profileProvider).valueOrNull?.pregnancy ?? Pregnancy.unknown;
       action = TextButton.icon(
