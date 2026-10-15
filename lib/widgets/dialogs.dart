@@ -347,6 +347,7 @@ Future<void> editSubject(BuildContext context, WidgetRef ref, Subject current) a
   await _saveProfile(context, ref, () => ref.read(repositoryProvider).setSubject(v));
 }
 
+/// 성별만 바꿈. 저장된 임신 여부는 건드리지 않음 (서현 U03·U04: 임의 변경 금지, 충돌은 확인 요청)
 Future<void> editSex(BuildContext context, WidgetRef ref, Sex current) async {
   final v = await pickOne<Sex>(context,
       title: '성별 (선택)',
