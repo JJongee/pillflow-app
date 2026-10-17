@@ -250,7 +250,7 @@ class DurDrugVerdict {
 }
 
 /// 2단계 유형(서버 type 값 확정 전이라 비슷한 이름도 받아 둠)
-enum DurKind { pregnancy, dose, elderly, efficacyDuplicate, duration, other }
+enum DurKind { pregnancy, dose, elderly, efficacyDuplicate, duration, split, other }
 
 DurKind durKindOf(String code) => switch (code) {
       'PREGNANCY' => DurKind.pregnancy,
@@ -258,6 +258,7 @@ DurKind durKindOf(String code) => switch (code) {
       'ELDERLY' || 'SENIOR' || 'OLD_AGE' => DurKind.elderly,
       'DUPLICATE' || 'EFFICACY_DUPLICATE' || 'EFFICACY' || 'THERAPEUTIC_DUPLICATE' => DurKind.efficacyDuplicate,
       'DURATION' || 'PERIOD' => DurKind.duration,
+      'SPLIT' => DurKind.split,
       _ => DurKind.other,
     };
 
@@ -270,6 +271,7 @@ String durTypeLabel(String code) => switch (code) {
       'ELDERLY' || 'SENIOR' || 'OLD_AGE' => '노인주의',
       'DUPLICATE' || 'EFFICACY_DUPLICATE' || 'EFFICACY' || 'THERAPEUTIC_DUPLICATE' => '효능군중복주의',
       'DURATION' || 'PERIOD' => '투여기간주의',
+      'SPLIT' => '분할주의', // 서방정만이 아니라 장용 제형도 있어 '분할주의'로 (연우 10/17)
       _ => 'DUR 주의',
     };
 
@@ -447,6 +449,8 @@ class DurCaution {
         DurKind.elderly => '고령자가 먹을 때 주의가 필요한 약으로 연결돼 있어요',
         DurKind.efficacyDuplicate => '같은 효능군의 약이 함께 있어요. 실제 중복 복용인지는 약사와 확인해 주세요',
         DurKind.duration => '오래 계속 먹을 때 주의가 필요한 약이에요. 기간 기준은 조건에 따라 달라요',
+        // '분할 가능'처럼 쪼개도 된다는 뜻으로 읽히는 문구는 쓰지 않음 (정보 없는 약도 마찬가지)
+        DurKind.split => '쪼개거나 부수어 먹으면 안 될 수 있는 약이에요. 나눠 먹기 전에 약사와 확인해 주세요',
         DurKind.other => '복용 전에 확인해 주세요',
       };
 

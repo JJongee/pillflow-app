@@ -501,7 +501,9 @@ class _CautionBody extends ConsumerWidget {
       // 서버가 정리해 준 줄을 그대로 (값이 있는 칸만 옴 → 빈 줄 없음)
       rows.addAll(c.info.map((l) => _InfoRow(l.label, l.value)));
       if (!c.info.any((l) => l.label == '추가 안내')) rows.add(_InfoRow('추가 안내', c.conditionNote));
-      if (!c.info.any((l) => l.label == '고시일')) rows.add(_InfoRow('고시일', c.noticeDate));
+      // 분할주의의 날짜는 고시일이 아니라 '변경일' → 고시일 줄을 덧붙이지 않음 (연우 10/17)
+      final hasDate = c.info.any((l) => l.label == '고시일' || l.label == '변경일');
+      if (!hasDate && c.kind != DurKind.split) rows.add(_InfoRow('고시일', c.noticeDate));
     } else {
       // info가 없는 예전 응답: 유형별로 보여 줄 줄만 다르고 형식은 같음
       if (c.kind == DurKind.efficacyDuplicate) {
@@ -513,7 +515,7 @@ class _CautionBody extends ConsumerWidget {
         _InfoRow('관련 성분', c.ingredients.isEmpty ? null : c.ingredients.join(', ')),
         _InfoRow(c.kind == DurKind.elderly ? '주의 내용' : '내용', c.detail),
         _InfoRow('추가 안내', c.conditionNote),
-        _InfoRow('고시일', c.noticeDate),
+        _InfoRow(c.kind == DurKind.split ? '변경일' : '고시일', c.noticeDate),
       ]);
     }
     final empty = c.info.isEmpty &&

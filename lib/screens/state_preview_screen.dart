@@ -93,7 +93,7 @@ class StatePreviewScreen extends StatelessWidget {
         header('DUR 판정'),
         item(Icons.warning_amber_rounded, '금기 있음 + 참고 정보', '병용·연령금기 카드 + 임부금기(기준 확인 중)·용량주의',
             () => _openScreen(context, DurResultScreen(preview: _danger))),
-        item(Icons.layers_outlined, '참고 정보 5종 (예시)', '약품별 묶음 · 유형별 접기/펼치기',
+        item(Icons.layers_outlined, '참고 정보 6종 (예시)', '약품별 묶음 · 유형별 접기/펼치기',
             () => _openScreen(context, DurResultScreen(preview: _stage2))),
         item(Icons.info_outline, '확인된 금기 기록 없음', '안전으로 보이지 않게 중립 색으로 표시',
             () => _openScreen(context, DurResultScreen(preview: _clean))),
@@ -226,7 +226,7 @@ const _undetermined = DurCheckResult(
   findings: [],
 );
 
-// 참고 정보 5종 · 약품별 묶음 확인용. 문구는 예시 (서버 info 형식: 받은 칸만 줄로 표시)
+// 참고 정보 6종 · 약품별 묶음 확인용. 문구는 예시 (서버 info 형식: 받은 칸만 줄로 표시)
 const _stage2 = DurCheckResult(
   dataVersion: '참고 정보 예시 (미리보기)',
   checkedAt: '2026-10-08',
@@ -261,6 +261,11 @@ const _stage2 = DurCheckResult(
     DurCaution(
       typeCode: 'DUPLICATE', itemSeqs: ['B'], ingredients: [], status: CautionStatus.confirmed, detail: '',
       info: [InfoLine('효능군', '해열진통소염제 (예시)'), InfoLine('계열', '예시 계열'), InfoLine('성분', '예시 성분')],
+    ),
+    // 분할주의: 날짜는 '변경일' (고시일 아님), applies는 항상 확인 필요
+    DurCaution(
+      typeCode: 'SPLIT', itemSeqs: ['B'], ingredients: [], status: CautionStatus.confirmed, detail: '',
+      info: [InfoLine('성분', '예시 성분'), InfoLine('제형', '장용정 (예시)'), InfoLine('변경일', '2024-01-01')],
     ),
   ],
 );

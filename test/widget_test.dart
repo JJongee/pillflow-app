@@ -90,6 +90,21 @@ void main() {
     expect(dur.status, CautionStatus.pending);
   });
 
+  test('분할주의(SPLIT): 이름·확인 필요·변경일, "분할 가능" 문구 없음', () {
+    final c = DurCaution.fromJson({
+      'type': 'SPLIT', 'item_seqs': ['1'], 'status': 'CONFIRMED', 'applies': 'CHECK',
+      'info': {'성분': '예시 성분', '제형': '장용정', '변경일': '2024-01-01'},
+    });
+    expect(c.kind, DurKind.split);
+    expect(c.label, '분할주의');
+    expect(c.applies, Applies.check);
+    expect(c.applies!.label, '확인 필요');
+    expect(c.info.map((l) => l.label), contains('변경일'));
+    expect(c.info.map((l) => l.label), isNot(contains('고시일')));
+    expect(c.hint, isNot(contains('분할 가능')));
+    expect(c.hint, isNot(contains('쪼개도 돼')));
+  });
+
   test('시간표 제안 응답을 파싱한다', () {
     final r = ScheduleSuggestResult.fromJson({
       'suggestions': [
