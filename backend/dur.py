@@ -74,7 +74,8 @@ CAUTION_READY_SQL = text(
     "to_regclass('public.v_app_dose_warnings') IS NOT NULL, "
     "to_regclass('public.v_app_elderly_warnings') IS NOT NULL, "
     "to_regclass('public.v_app_duplicate_warnings') IS NOT NULL, "
-    "to_regclass('public.v_app_duration_warnings') IS NOT NULL"
+    "to_regclass('public.v_app_duration_warnings') IS NOT NULL, "
+    "to_regclass('public.v_app_split_warnings') IS NOT NULL"
 )
 
 PREGNANCY_SQL = text(
@@ -95,6 +96,15 @@ DOSE_SQL = text(
     FROM v_app_dose_warnings v
     LEFT JOIN dur_dose_products p ON p.record_hash = v.record_hash
     WHERE v.item_seq IN :seqs
+    """
+).bindparams(bindparam("seqs", expanding=True))
+
+# 분할주의 (김서현 10/16 전달). 품목코드로 연결된 참고정보. 뷰만 읽고 원문 표는 건드리지 않는다.
+SPLIT_SQL = text(
+    """
+    SELECT item_seq, ingredients_raw, form_name, detail, condition_note, split_source_category,
+           source_link_status, user_decision_status, change_date_raw
+    FROM v_app_split_warnings WHERE item_seq IN :seqs
     """
 ).bindparams(bindparam("seqs", expanding=True))
 
@@ -167,13 +177,18 @@ NOTE_PREG_PENDING = "임부금기 등급 기준을 확인 중이에요. 임신 �
 NOTE_PREG_CONFLICT = "임부금기 기준이 서로 달라 등급을 정하지 못했어요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_DOSE_PENDING = "1일 최대 투여량 기준을 확인 중이에요. 정해진 용량을 넘기지 말고, 궁금하면 의사·약사와 상담하세요."
 # 임부금기·투여기간은 10/11부터 applies로 판정한다. 다만 금기 판정(verdict)에는 여전히 넣지 않는다.
-NOTE_CAUTIONS = ("임부금기·용량주의·노인주의·효능군중복주의·투여기간주의는 cautions에 참고 정보로 알려 줘요. "
+NOTE_CAUTIONS = ("임부금기·용량주의·노인주의·효능군중복주의·투여기간주의·분할주의는 cautions에 참고 정보로 알려 줘요. "
                  "금기 판정(verdict)에는 넣지 않아요.")
 NOTE_DUPLICATE_SCOPE = "효능군은 약마다 따로 알려 줘요. 효능군이 같다고 바로 중복은 아니어서, 함께 먹어도 되는지는 따로 확인해야 해요."
 
 UNITS = ("year", "month", "week")
 RANK = {"NO_KNOWN_ISSUE": 0, "UNDETERMINED": 1, "CONTRAINDICATED": 2}
 NOTE_NOT_SAFE = "기록 없음(NO_KNOWN_ISSUE)은 '안전'이 아니라, 수집된 데이터에 금기 기록이 없다는 뜻이에요."
+# 분할주의 (김서현 10/16). 서방정·장용 제형 등 쪼개면 안 되는 약. 서버는 '분할해도 됨'을 절대 말하지 않는다.
+NOTE_SPLIT = "쪼개거나 씹거나 가루로 만들지 말고 그대로 삼키는 약이에요. 나눠 먹어야 하면 의사·약사와 상담하세요."
+NOTE_SPLIT_CONDITIONAL = "원문에 조건이 붙어 있어요. 비고와 허가사항을 확인하기 전에는 분할해도 된다고 보지 않아요."
+NOTE_SPLIT_APPLIES = "분할해도 되는지는 서버가 판정하지 않아요. 약 포장·허가사항과 의사·약사 안내를 따르세요."
+NOTE_SPLIT_ABSENT = "분할주의 정보가 없는 약도 쪼개도 된다는 뜻은 아니에요."
 NOTE_BOUNDARY = "태어난 해만으로 판단해서, 생일에 따라 해당되지 않을 수도 있어요."
 
 
@@ -198,7 +213,7 @@ class DurFinding(BaseModel):
 
 
 class DurCaution(BaseModel):
-    type: str  # PREGNANCY(임부금기) / DOSE(용량주의)
+    type: str  # PREGNANCY / DOSE / ELDERLY / DUPLICATE / DURATION / SPLIT(분할주의)
     item_seqs: list[str]  # 약 1개 (findings와 같은 모양)
     ingredients: list[str]
     status: str  # CONFIRMED / PENDING(기준 확인 중) / CONFLICT(기준 충돌)
@@ -397,7 +412,41 @@ def judge_duration(status, rules, period, today):
     return "CHECK", NOTE_DURATION_OVER.format(days=days, limit=limit)  # 종료일이 있어도 연속 복용은 확인 못 한다
 
 
-def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=(),
+INGR_CODE = re.compile(r"\[M\d+\]")
+
+
+def split_caution(row, order):
+    """분할주의 한 건. 품목코드로 연결된 참고정보라 status는 CONFIRMED, 근거 칸에 '품목코드 일치'를 적는다.
+    김서현 10/16: 사용자별 분할 허용 판정이 아니므로 applies는 항상 CHECK. 분할 가능으로는 절대 표시하지 않는다.
+    notice_date는 원본에 없고 change_date_raw는 변경일이라 고시일로 쓰지 않는다."""
+    s = row["item_seq"]
+    ingr = clean(INGR_CODE.sub("", row["ingredients_raw"] or "").replace("/", "·"))
+    form = clean(row["form_name"])
+    raw = clean(row["detail"]) or ""
+    category = row["split_source_category"]
+    changed = clean(row["change_date_raw"])
+    if changed and re.fullmatch(r"\d{8}", changed):
+        changed = f"{changed[:4]}-{changed[4:6]}-{changed[6:]}"
+    if category == "split_prohibited":
+        head = "분할주의 · 분할불가"
+        advice = NOTE_SPLIT
+    else:  # 원본에 '분할가능' 7건이 있지만 앱 대상에는 없다. 들어와도 '가능'으로 바꾸지 않는다.
+        head = "분할주의 · 원문 확인 필요"
+        advice = NOTE_SPLIT_CONDITIONAL
+    if form:
+        head += f" ({form})"
+    info = info_of(**{"제형": form, "성분": ingr, "원문": raw, "변경일": changed, "연결 기준": "품목코드 일치"})
+    return (order, "SPLIT", s, ingr or "", head), {
+        "type": "SPLIT", "item_seqs": [s], "ingredients": [ingr] if ingr else [],
+        "status": "CONFIRMED" if row["source_link_status"] == "product_code_matched" else "PENDING",
+        "grade": None, "detail": head, "info": info,
+        "applies": "CHECK", "applies_note": NOTE_SPLIT_APPLIES,
+        "condition_note": join_text(row["condition_note"], advice),
+        "notice_date": None,
+    }
+
+
+def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=(), split=(),
                    pregnancy="UNKNOWN", sex="UNKNOWN", periods=None, today=None):
     """임부금기·용량주의·노인주의·효능군중복주의·투여기간주의 참고 정보.
     판정(verdict)에는 쓰지 않고, 기준 확인 중(pending)인 기록도 빼지 않는다.
@@ -471,6 +520,10 @@ def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=()
                 key, item = simple_caution(kind, row, rule, order.get(row["item_seq"], 999),
                                            periods.get(row["item_seq"]), today)
                 items.setdefault(key, item)
+
+    for row in split:
+        key, item = split_caution(row, order.get(row["item_seq"], 999))
+        items.setdefault(key, item)
 
     result = [items[k] for k in sorted(items)]
     # 한 약에 같은 종류가 여러 건이면, 어느 기준이 맞는지 확정된 게 아니라고 알려 준다
@@ -599,10 +652,10 @@ def dur_check(
         if age_ready:
             age_rows = db.execute(AGE_SQL, {"seqs": seqs}).mappings().all()
             pending_rows = db.execute(AGE_PENDING_SQL, {"seqs": seqs}).mappings().all()
-    caution_rows = {name: [] for name in ("preg", "dose", "elderly", "duplicate", "duration")}
+    caution_rows = {name: [] for name in ("preg", "dose", "elderly", "duplicate", "duration", "split")}
     ready = dict(zip(caution_rows, db.execute(CAUTION_READY_SQL).one()))
     queries = {"preg": PREGNANCY_SQL, "dose": DOSE_SQL, "elderly": ELDERLY_SQL,
-               "duplicate": DUPLICATE_SQL, "duration": DURATION_SQL}
+               "duplicate": DUPLICATE_SQL, "duration": DURATION_SQL, "split": SPLIT_SQL}
     for name, sql in queries.items():
         if seqs and ready[name]:  # 뷰가 없는 예전 백업이면 건너뛴다
             caution_rows[name] = db.execute(sql, {"seqs": seqs}).mappings().all()
@@ -628,6 +681,8 @@ def dur_check(
         notes.append(NOTE_CAUTIONS)
     if any(c["type"] == "DUPLICATE" for c in cautions):
         notes.append(NOTE_DUPLICATE_SCOPE)
+    if ready.get("split"):
+        notes.append(NOTE_SPLIT_ABSENT)
     # 실제로 비어 있는 입력만 권한다. 남성이면 임신 여부는 권하지 않는다. (고연수 10/11)
     need_preg = any(c["type"] == "PREGNANCY" and c["applies"] == "UNKNOWN" for c in cautions)
     need_period = any(c["type"] == "DURATION" and c["applies"] == "UNKNOWN" for c in cautions)

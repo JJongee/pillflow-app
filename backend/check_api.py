@@ -386,6 +386,21 @@ check("성별이 정해진 값이 아니면 422", lambda: s == 422, s)
 s, b = call("PUT", "/me/profile", {"subject": "FAMILY"}, token_a)
 check("subject가 정해진 값이 아니면 422", lambda: s == 422, s)
 call("PUT", "/me/profile", {"subject": "UNKNOWN", "sex": "UNKNOWN", "pregnancy": "PREGNANT"}, token_a)
+# 분할주의 (김서현 10/16) — 품목코드 연결 참고정보, 판정 아님
+print("[12-3] 분할주의")
+s, b = call("POST", "/dur/check", {"item_seqs": ["197600483"]}, token_a)  # 신일비사코딜정, 장용성당의정
+sp = [c for c in b.get("cautions", []) if c["type"] == "SPLIT"] if isinstance(b, dict) else []
+check("비사코딜정 → 분할주의 1건", lambda: len(sp) == 1, [c["type"] for c in b.get("cautions", [])] if isinstance(b, dict) else b)
+check("분할주의는 분할불가 + 제형으로 표시", lambda: sp and sp[0]["detail"].startswith("분할주의 · 분할불가") and "장용성" in sp[0]["detail"], sp[0]["detail"] if sp else None)
+check("품목코드 연결 → status CONFIRMED, info에 '연결 기준: 품목코드 일치'", lambda: sp and sp[0]["status"] == "CONFIRMED" and sp[0]["info"].get("연결 기준") == "품목코드 일치", sp[0]["info"] if sp else None)
+check("분할주의 applies는 항상 CHECK (사용자별 판정 아님)", lambda: sp and sp[0]["applies"] == "CHECK", sp[0]["applies"] if sp else None)
+check("변경일은 info에, notice_date는 null (고시일 아님)", lambda: sp and sp[0]["notice_date"] is None and sp[0]["info"].get("변경일") == "2021-04-22", (sp[0]["notice_date"], sp[0]["info"].get("변경일")) if sp else None)
+check("분할주의가 있어도 verdict는 그대로", lambda: isinstance(b, dict) and b["drugs"][0]["verdict"] in ("NO_KNOWN_ISSUE", "UNDETERMINED"), b["drugs"][0]["verdict"] if isinstance(b, dict) else None)
+check("findings에는 안 들어감", lambda: isinstance(b, dict) and not any(f["type"] == "SPLIT" for f in b["findings"]))
+check("'분할 가능'이라는 말이 응답 어디에도 없음", lambda: "분할 가능" not in json.dumps(b, ensure_ascii=False) and "분할가능" not in json.dumps(b, ensure_ascii=False))
+check("안내에 '정보가 없는 약도 쪼개도 된다는 뜻은 아니에요'", lambda: isinstance(b, dict) and any("쪼개도 된다는 뜻은 아니" in n for n in b.get("notes", [])), b.get("notes") if isinstance(b, dict) else None)
+s, b = call("POST", "/dur/check", {"item_seqs": ["202106092"]}, token_a)  # 타이레놀정500
+check("분할주의 없는 약엔 SPLIT이 안 붙음", lambda: isinstance(b, dict) and not any(c["type"] == "SPLIT" for c in b["cautions"]))
 # 복용 시작일 → 투여기간주의 판정
 s, b = call("POST", "/me/drugs", {"item_seq": "197600483"}, token_a)  # 비사코딜, 기준 7일
 dur_drug = b.get("id") if isinstance(b, dict) else None
@@ -504,7 +519,8 @@ call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
 print("[0-1] 검토 전용 표 미참조")
 import glob, os
 REVIEW_ONLY = ("drug_dose_condition_candidates", "drug_combo_condition_candidates", "drug_combo_condition_components",
-               "drug_composition_review_groups", "drug_composition_review_components", "drug_composition_review_annotations")
+               "drug_composition_review_groups", "drug_composition_review_components", "drug_composition_review_annotations",
+               "dur_split_products")  # 분할주의 원문 표. 서버는 v_app_split_warnings 뷰만 읽는다 (김서현 10/16)
 here = os.path.dirname(os.path.abspath(__file__))
 hits = []
 for f in glob.glob(os.path.join(here, "*.py")):
@@ -512,7 +528,7 @@ for f in glob.glob(os.path.join(here, "*.py")):
         continue
     src = open(f, encoding="utf-8").read()
     hits += [(os.path.basename(f), t) for t in REVIEW_ONLY if t in src]
-check("서버 코드가 검토 전용 표 6개를 참조하지 않는다", lambda: not hits, hits)
+check("서버 코드가 검토 전용 표 7개를 참조하지 않는다", lambda: not hits, hits)
 print("[13-1] 제안 중복 저장 막기")
 s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [sug_drug]}, token_a)
 one = b["suggestions"][0] if isinstance(b, dict) and b.get("suggestions") else {}

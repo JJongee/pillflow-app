@@ -3,13 +3,23 @@
 ## 준비물
 - Python 3.12
 - PostgreSQL 16 (설치할 때 정한 postgres 비밀번호 기억)
-- 김서현 DB 백업 (최신: `pillflow_20261015_143629_725927_dose_conditions_reviewed.dump`, 주의 5종 + 함량 검증 88품목 + 용법 조건 후보 30품목)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
+- 김서현 DB 백업 (최신: `pillflow_20261016_192012_748941_split_reviewed.dump`, 주의 5종 + 분할주의 + 함량 검증 88품목 + 용법 조건 후보 30품목)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
   이 백업은 **누적 전체 백업**입니다. 예전 백업을 따로 복원하거나 예전 수정용 스크립트를 돌릴 필요가 없습니다. (10/16 김서현 확인)
-  검토 전용 표 6개(`drug_*_condition_*`, `drug_composition_review_*`)는 서버가 읽지 않습니다. 복원 안내서 방식에서는 `pillflow_app`이 소유자라 DB 권한으로 막히지 않으므로 `check_api.py`가 코드 참조를 점검합니다.
+  검토 전용 표 6개(`drug_*_condition_*`, `drug_composition_review_*`)와 분할주의 원문 표(`dur_split_products`)는 서버가 읽지 않습니다. `check_api.py` [0-1]이 코드 참조를 점검합니다.
 
 ## 처음 한 번만 (Windows PowerShell)
-1. **DB 복원**: 김서현 복원 안내서대로 `pillflow_app` 계정과 `pillflow` DB를 만들고 복원합니다.
-   안내서의 표 건수가 같은지 꼭 확인합니다.
+1. **DB 복원** (10/16부터 바뀐 방식 — 김서현 요청): `pillflow_app`이 아니라 **관리자 계정(`postgres`)으로**, `--no-owner`만 쓰고 `--no-acl`은 **빼고** 복원합니다. 그래야 백업에 담긴 권한이 그대로 살아서 검토 전용 표가 앱 계정에 막힙니다.
+   ```
+   createuser -U postgres --no-superuser --no-createdb --no-createrole --pwprompt pillflow_app   (이미 있으면 생략)
+   createdb -U postgres --owner=pillflow_app --encoding=UTF8 pillflow
+   pg_restore -U postgres -d pillflow --no-owner --single-transaction --exit-on-error C:\Pbl\db\<백업파일>.dump
+   ```
+   복원 뒤 서버가 읽는 기본 표 4개에만 읽기 권한을 줍니다 (백업의 권한 목록에 빠져 있음. 전체 표 일괄 GRANT는 하지 않습니다).
+   ```
+   psql -U postgres -d pillflow -c "GRANT SELECT ON drugs, drug_images, dur_fetch_status, dur_interactions TO pillflow_app"
+   ```
+   권한 확인: `psql -U pillflow_app -d pillflow -c "SELECT count(*) FROM v_app_split_warnings"` 는 185가 나오고, `... FROM dur_split_products` 는 **permission denied**가 나와야 정상입니다.
+   기존 DB의 사용자 데이터(`users`, `user_drugs`, `schedules`, `intake_logs`)를 옮기려면 TODO.md의 "사용자 데이터 옮기기"를 보세요.
 2. **라이브러리 설치**: 저장소를 받은 뒤 `backend` 폴더에서 실행합니다.
    ```
    py -3.12 -m venv .venv
@@ -43,10 +53,11 @@ python -m uvicorn main:app --reload
 
 ## DUR 판별 기준
 - **병용금기 + 연령금기**를 판별합니다.
-- **임부금기·용량주의·노인주의·효능군중복주의·투여기간주의**는 응답의 `cautions`에 약별 참고 정보로 줍니다. 금기 판정(`verdict`)에는 넣지 않습니다.
+- **임부금기·용량주의·노인주의·효능군중복주의·투여기간주의·분할주의**는 응답의 `cautions`에 약별 참고 정보로 줍니다. 금기 판정(`verdict`)에는 넣지 않습니다.
   나머지 3종은 해당 여부도 판정하지 않습니다. 용량주의는 최대량이 아직 글자이고, 노인주의는 기준에 나이 값이 없으며, 효능군은 같다고 바로 중복이 아니기 때문입니다.
 - 기준 확인 중(`PENDING`)인 기록도 빼지 않고 "기준 확인 중"으로 보여 줍니다. **"해당 없음"이 아닙니다.**
 - 임신 여부·성별과 복용 시작일을 입력하면 **임부금기·투여기간주의가 해당되는지**를 `applies`로 알려 줍니다. 데이터 연결 상태(`status`)와는 다른 칸입니다. 조건이 불명확하면 확정하지 않고 "확인 필요"로 둡니다.
+- **분할주의**(10/16 추가, `type: SPLIT`)는 서방정·장용 제형처럼 쪼개면 안 되는 약입니다. 품목코드로 연결된 참고정보라 `status`는 `CONFIRMED`이고 `info`에 "연결 기준: 품목코드 일치"가 들어갑니다. 사용자별 판정이 아니라 `applies`는 항상 `CHECK`이며 `verdict`에 넣지 않습니다. 변경일은 `info`의 "변경일"이고 `notice_date`는 null입니다. **서버는 어떤 약도 '분할 가능'이라고 말하지 않습니다.** 분할주의 정보가 없는 약도 쪼개도 된다는 뜻이 아닙니다.
   성별이 `MALE`이면 임부금기는 `NO`로 둡니다. 단 `MALE`인데 임신 중으로 저장돼 있으면 입력 충돌이라 `CHECK`로 두고 다시 확인을 받습니다.
   투여기간은 입력한 날짜로 센 경과기간이 기준을 넘어도 `YES`로 단정하지 않고 `CHECK`입니다. 중간에 끊었는지 서버가 알 수 없기 때문입니다. (10/13 김서현)
 - 연령금기는 프로필의 생년월일(`birth_date`)로 판단합니다. 달력으로 계산해서 생일 당일도 정확합니다.
