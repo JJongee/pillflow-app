@@ -76,6 +76,15 @@
 - 52품목 dump는 **누적 전체 백업**이라 예전 38품목 dump를 추가 복원하거나 예전 수정용 스크립트를 돌릴 필요가 없습니다.
 - 다만 **함량 검증 확대와 용량 초과 자동 판정은 별개**입니다. `automatic_decision_ready`는 모두 false이고 기존 초과 판정 함수의 지원 범위는 1품목 그대로라, **자동 판정 보류를 유지합니다.**
 
+**10/18 김서현 — 기본 표 권한 보완 + 수집 이력 덤프 (`pillflow_20261018_090558_228335_portable_history_reviewed.dump`)**
+- 기본 표 4개 SELECT 권한이 백업에 포함됨 → 복원 뒤 추가 GRANT 불필요. 수집 이력 표 3개(`data_collection_runs`·`data_source_artifacts`·`data_import_verifications`, 각 1건) 추가, 앱 접근 차단. 총 39개 표.
+- 복원 대조(주연우): SHA256 `061a2922…`·28,703,643바이트·39개 표 행 수·DUR 뷰 건수 전부 일치. 추가 GRANT 없이 서버 시험 4종 통과, 제한 표 10개 거부 실측. `check_api.py` 금지 목록에 이력 표 3개 추가.
+
+**10/16 저녁 김서현 — 분할주의 덤프 (`pillflow_20261016_192012_748941_split_reviewed.dump`)**
+- `dur_split_products` 2,200기록/2,199품목(원문, 앱 접근 차단), `v_app_split_warnings` 185기록/185품목(앱 대상, 전부 `split_prohibited`). `dur_products` 19,766.
+- 서버 `SPLIT` caution 연동(10/17, `bf326f1`), 앱 반영(10/17 고연수), 손채은 검수 통과(10/18).
+- 복원 방식 변경: 관리자 계정 + `--no-owner`(ACL 포함). 이 백업은 기본 표 4개 권한이 빠져 있어 따로 GRANT가 필요했음 → 10/18 백업에서 해결.
+
 **10/16 김서현 — 용법 조건 검토 덤프**
 - 함량 검증 **88품목·153행**(단일제 52 + 복합제 36품목·101행). DUR 최대량 후보 44건, 허가 용법 후보 12건.
 - 새 검토 표 3개: `drug_dose_condition_candidates` 21건(성인 10·만 12세 이상 11), `drug_combo_condition_candidates` 9건, `drug_combo_condition_components` 23건. **검토 후보일 뿐 자동 판정 범위 확대가 아닙니다.** `automatic_decision_ready=false`, 환산 함수 52품목·초과 비교 함수 1품목 지원 범위 그대로.

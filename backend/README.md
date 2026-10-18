@@ -3,9 +3,9 @@
 ## 준비물
 - Python 3.12
 - PostgreSQL 16 (설치할 때 정한 postgres 비밀번호 기억)
-- 김서현 DB 백업 (최신: `pillflow_20261016_192012_748941_split_reviewed.dump`, 주의 5종 + 분할주의 + 함량 검증 88품목 + 용법 조건 후보 30품목)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
+- 김서현 DB 백업 (최신: `pillflow_20261018_090558_228335_portable_history_reviewed.dump`, 주의 5종 + 분할주의 + 함량 검증 88품목 + 용법 조건 후보 30품목 + 수집 이력)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
   이 백업은 **누적 전체 백업**입니다. 예전 백업을 따로 복원하거나 예전 수정용 스크립트를 돌릴 필요가 없습니다. (10/16 김서현 확인)
-  검토 전용 표 6개(`drug_*_condition_*`, `drug_composition_review_*`)와 분할주의 원문 표(`dur_split_products`)는 서버가 읽지 않습니다. `check_api.py` [0-1]이 코드 참조를 점검합니다.
+  제한 표 10개(검토 전용 6개 `drug_*_condition_*`·`drug_composition_review_*`, 분할주의 원문 `dur_split_products`, 수집 이력 `data_*` 3개)는 서버가 읽지 않고 앱 계정 권한도 없습니다. `check_api.py` [0-1]이 코드 참조를 점검합니다.
 
 ## 처음 한 번만 (Windows PowerShell)
 1. **DB 복원** (10/16부터 바뀐 방식 — 김서현 요청): `pillflow_app`이 아니라 **관리자 계정(`postgres`)으로**, `--no-owner`만 쓰고 `--no-acl`은 **빼고** 복원합니다. 그래야 백업에 담긴 권한이 그대로 살아서 검토 전용 표가 앱 계정에 막힙니다.
@@ -14,11 +14,8 @@
    createdb -U postgres --owner=pillflow_app --encoding=UTF8 pillflow
    pg_restore -U postgres -d pillflow --no-owner --single-transaction --exit-on-error C:\Pbl\db\<백업파일>.dump
    ```
-   복원 뒤 서버가 읽는 기본 표 4개에만 읽기 권한을 줍니다 (백업의 권한 목록에 빠져 있음. 전체 표 일괄 GRANT는 하지 않습니다).
-   ```
-   psql -U postgres -d pillflow -c "GRANT SELECT ON drugs, drug_images, dur_fetch_status, dur_interactions TO pillflow_app"
-   ```
-   권한 확인: `psql -U pillflow_app -d pillflow -c "SELECT count(*) FROM v_app_split_warnings"` 는 185가 나오고, `... FROM dur_split_products` 는 **permission denied**가 나와야 정상입니다.
+   10/18 백업부터는 서버가 읽는 기본 표 4개(`drugs`, `drug_images`, `dur_fetch_status`, `dur_interactions`)의 권한이 백업에 들어 있어 **추가 GRANT가 필요 없습니다.** (10/16 백업까지는 따로 GRANT해야 했음)
+   권한 확인: `psql -U pillflow_app -d pillflow -c "SELECT count(*) FROM drugs"` 는 4741, `... FROM v_app_split_warnings` 는 185가 나오고, `... FROM dur_split_products` 는 **접근 권한 없음**이 나와야 정상입니다.
    기존 DB의 사용자 데이터(`users`, `user_drugs`, `schedules`, `intake_logs`)를 옮기려면 TODO.md의 "사용자 데이터 옮기기"를 보세요.
 2. **라이브러리 설치**: 저장소를 받은 뒤 `backend` 폴더에서 실행합니다.
    ```
