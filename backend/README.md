@@ -3,9 +3,9 @@
 ## 준비물
 - Python 3.12
 - PostgreSQL 16 (설치할 때 정한 postgres 비밀번호 기억)
-- 김서현 DB 백업 (최신: `pillflow_20261018_090558_228335_portable_history_reviewed.dump`, 주의 5종 + 분할주의 + 함량 검증 88품목 + 용법 조건 후보 30품목 + 수집 이력)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
+- 김서현 DB 백업 (최신: `pillflow_20261019_142328_908529_portable_inventory_reviewed.dump`, 주의 5종 + 분할주의 + 함량 검증 88품목 + 용법 조건 후보 30품목 + 수집 이력·근거)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
   이 백업은 **누적 전체 백업**입니다. 예전 백업을 따로 복원하거나 예전 수정용 스크립트를 돌릴 필요가 없습니다. (10/16 김서현 확인)
-  제한 표 10개(검토 전용 6개 `drug_*_condition_*`·`drug_composition_review_*`, 분할주의 원문 `dur_split_products`, 수집 이력 `data_*` 3개)는 서버가 읽지 않고 앱 계정 권한도 없습니다. `check_api.py` [0-1]이 코드 참조를 점검합니다.
+  제한 표 12개(검토 전용 6개 `drug_*_condition_*`·`drug_composition_review_*`, 분할주의 원문 `dur_split_products`, 수집 이력·근거 `data_*` 5개)는 서버가 읽지 않고 앱 계정 권한도 없습니다. `check_api.py` [0-1]이 코드 참조를 점검합니다.
 
 ## 처음 한 번만 (Windows PowerShell)
 1. **DB 복원** (10/16부터 바뀐 방식 — 김서현 요청): `pillflow_app`이 아니라 **관리자 계정(`postgres`)으로**, `--no-owner`만 쓰고 `--no-acl`은 **빼고** 복원합니다. 그래야 백업에 담긴 권한이 그대로 살아서 검토 전용 표가 앱 계정에 막힙니다.

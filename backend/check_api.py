@@ -521,7 +521,8 @@ import glob, os
 REVIEW_ONLY = ("drug_dose_condition_candidates", "drug_combo_condition_candidates", "drug_combo_condition_components",
                "drug_composition_review_groups", "drug_composition_review_components", "drug_composition_review_annotations",
                "dur_split_products",  # 분할주의 원문 표. 서버는 v_app_split_warnings 뷰만 읽는다 (김서현 10/16)
-               "data_collection_runs", "data_source_artifacts", "data_import_verifications")  # 수집 이력 표 (10/18)
+               "data_collection_runs", "data_source_artifacts", "data_import_verifications",  # 수집 이력 표 (10/18)
+               "data_source_inventory_snapshots", "data_source_inventory_files")  # 허가·주성분 수집 근거 이력 (10/19)
 here = os.path.dirname(os.path.abspath(__file__))
 hits = []
 for f in glob.glob(os.path.join(here, "*.py")):
@@ -529,7 +530,7 @@ for f in glob.glob(os.path.join(here, "*.py")):
         continue
     src = open(f, encoding="utf-8").read()
     hits += [(os.path.basename(f), t) for t in REVIEW_ONLY if t in src]
-check("서버 코드가 제한 표 10개(검토 6·분할 원문 1·수집 이력 3)를 참조하지 않는다", lambda: not hits, hits)
+check("서버 코드가 제한 표 12개(검토 6·분할 원문 1·수집 이력 5)를 참조하지 않는다", lambda: not hits, hits)
 print("[13-1] 제안 중복 저장 막기")
 s, b = call("POST", "/me/schedules/suggest", {"user_drug_ids": [sug_drug]}, token_a)
 one = b["suggestions"][0] if isinstance(b, dict) and b.get("suggestions") else {}

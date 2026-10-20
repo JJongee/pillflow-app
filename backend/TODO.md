@@ -76,6 +76,10 @@
 - 52품목 dump는 **누적 전체 백업**이라 예전 38품목 dump를 추가 복원하거나 예전 수정용 스크립트를 돌릴 필요가 없습니다.
 - 다만 **함량 검증 확대와 용량 초과 자동 판정은 별개**입니다. `automatic_decision_ready`는 모두 false이고 기존 초과 판정 함수의 지원 범위는 1품목 그대로라, **자동 판정 보류를 유지합니다.**
 
+**10/19 김서현 — 허가·주성분 수집 근거 이력 덤프 (`pillflow_20261019_142328_908529_portable_inventory_reviewed.dump`)**
+- 이력 표 2개 추가: `data_source_inventory_snapshots` 1건, `data_source_inventory_files` 9,482건(허가 4,741 + 주성분 4,741 파일별 근거). 앱 접근 차단. 총 41개 표, 제한 표 12개.
+- 복원 대조(주연우 10/20): SHA256 `344a77ca…`·29,587,352바이트·41개 표 행 수·DUR 뷰 건수 전부 일치. 추가 GRANT 없이 기본 표 4개 조회, 제한 표 12개 거부 실측, 서버 시험 통과. 금지 목록에 2개 추가.
+
 **10/18 김서현 — 기본 표 권한 보완 + 수집 이력 덤프 (`pillflow_20261018_090558_228335_portable_history_reviewed.dump`)**
 - 기본 표 4개 SELECT 권한이 백업에 포함됨 → 복원 뒤 추가 GRANT 불필요. 수집 이력 표 3개(`data_collection_runs`·`data_source_artifacts`·`data_import_verifications`, 각 1건) 추가, 앱 접근 차단. 총 39개 표.
 - 복원 대조(주연우): SHA256 `061a2922…`·28,703,643바이트·39개 표 행 수·DUR 뷰 건수 전부 일치. 추가 GRANT 없이 서버 시험 4종 통과, 제한 표 10개 거부 실측. `check_api.py` 금지 목록에 이력 표 3개 추가.
