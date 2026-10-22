@@ -27,6 +27,8 @@ class MockRepository implements PillRepository {
 
   final List<UserDrug> _myDrugs = [];
   final List<ScheduleItem> _schedules = [];
+  // 시간표를 만든 날 (그 전 날짜는 복용 기록에 넣지 않음 → 달력에서 '못 먹음' 대신 '약 없음')
+  final Map<int, String> _scheduleCreatedOn = {};
   final Map<String, IntakeStatus> _intakes = {}; // key: '$scheduleId|$date'
   final Map<String, String> _recordedAt = {};
   int? _birthYear;
@@ -203,6 +205,7 @@ class MockRepository implements PillRepository {
       doseText: doseText,
     );
     _schedules.add(s);
+    _scheduleCreatedOn[s.id] = DateTime.now().toIso8601String().substring(0, 10);
     return s;
   }
 
@@ -238,7 +241,8 @@ class MockRepository implements PillRepository {
   @override
   Future<List<IntakeRecord>> getIntakes(String date) async {
     await _delay();
-    final list = [..._schedules]..sort((a, b) => a.time.compareTo(b.time));
+    final list = [..._schedules.where((s) => (_scheduleCreatedOn[s.id] ?? '') .compareTo(date) <= 0)]
+      ..sort((a, b) => a.time.compareTo(b.time));
     return list
         .map((s) => IntakeRecord(
               scheduleId: s.id,

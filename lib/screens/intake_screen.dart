@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../data/adherence.dart';
+import '../widgets/adherence_widgets.dart';
 import '../widgets/state_views.dart';
 import 'settings_screen.dart';
 
@@ -15,6 +17,7 @@ class IntakeScreen extends ConsumerWidget {
     try {
       await ref.read(repositoryProvider).setIntake(scheduleId: r.scheduleId, date: r.date, status: s);
       ref.invalidate(intakesProvider(r.date));
+      ref.invalidate(daySummariesProvider); // 이번 주 줄·달력도 바로 반영
     } catch (e) {
       if (context.mounted) showSnack(context, e.toString());
     }
@@ -38,14 +41,18 @@ class IntakeScreen extends ConsumerWidget {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => ref.refresh(intakesProvider(date).future),
+        onRefresh: () {
+          ref.invalidate(daySummariesProvider);
+          return ref.refresh(intakesProvider(date).future);
+        },
         child: AsyncBody<List<IntakeRecord>>(
           value: value,
           onRetry: () => ref.invalidate(intakesProvider(date)),
           data: (list) {
             if (list.isEmpty) {
-              return ListView(children: const [
-                SizedBox(height: 80),
+              return ListView(padding: const EdgeInsets.all(16), children: const [
+                WeekStrip(),
+                SizedBox(height: 40),
                 EmptyView(
                   icon: Icons.event_available_outlined,
                   title: '오늘 먹을 약이 없어요',
@@ -55,6 +62,8 @@ class IntakeScreen extends ConsumerWidget {
             }
             final done = list.where((r) => r.status == IntakeStatus.taken).length;
             return ListView(padding: const EdgeInsets.all(16), children: [
+              const WeekStrip(),
+              const SizedBox(height: 18),
               Text('$done / ${list.length} 복용', style: t.titleLarge),
               const SizedBox(height: 8),
               LinearProgressIndicator(value: done / list.length, minHeight: 10, borderRadius: BorderRadius.circular(5)),

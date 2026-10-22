@@ -69,12 +69,15 @@ void main() {
     expect(u.time, '21:00');
     expect((await r.getSchedules()).single.mealRelation, MealRelation.empty);
 
-    await r.setIntake(scheduleId: s.id, date: '2026-10-05', status: IntakeStatus.taken);
-    expect((await r.getIntakes('2026-10-05')).single.status, IntakeStatus.taken);
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    await r.setIntake(scheduleId: s.id, date: today, status: IntakeStatus.taken);
+    expect((await r.getIntakes(today)).single.status, IntakeStatus.taken);
+    // 시간표를 만들기 전 날짜에는 기록이 없음 (복용 달력에서 '못 먹음' 대신 '약 없음')
+    expect(await r.getIntakes('2000-01-01'), isEmpty);
 
     await r.deleteMyDrug(d.id);
     expect(await r.getSchedules(), isEmpty);
-    expect(await r.getIntakes('2026-10-05'), isEmpty);
+    expect(await r.getIntakes(today), isEmpty);
   });
 
   test('전체 데이터 검색: 앞글자 일치 우선, 띄어쓰기 무시', () async {
