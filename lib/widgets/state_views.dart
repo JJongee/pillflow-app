@@ -19,6 +19,21 @@ class LoadingView extends StatelessWidget {
       );
 }
 
+/// 한국어 줄바꿈 다듬기: 단어 중간("찾 / 아도")에서 끊기지 않고 띄어쓰기에서만 줄이 바뀌게
+/// (글자 사이에 보이지 않는 '단어 붙임' 문자를 넣음 — 화면 표시용 글에만 씀)
+String keepWords(String s) {
+  final b = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    final c = s[i];
+    b.write(c);
+    if (i + 1 < s.length) {
+      final n = s[i + 1];
+      if (c.trim().isNotEmpty && n.trim().isNotEmpty) b.write('\u2060');
+    }
+  }
+  return b.toString();
+}
+
 class EmptyView extends StatelessWidget {
   const EmptyView({super.key, required this.title, this.message, this.icon = Icons.inbox_outlined, this.action});
   final String title;
@@ -45,10 +60,10 @@ class EmptyView extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 64, color: Toss.grey300),
             const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+            Text(keepWords(title), style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
             if (message != null) ...[
               const SizedBox(height: 8),
-              Text(message!, style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
+              Text(keepWords(message!), style: Theme.of(context).textTheme.bodyMedium, textAlign: TextAlign.center),
             ],
             if (action != null) ...[const SizedBox(height: 20), action!],
           ]),

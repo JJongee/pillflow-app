@@ -25,4 +25,11 @@ void main() {
     await b.load();
     expect(b.state, isTrue);
   });
+
+  test('글자 크기 첫 안내: 한 번 물어보면 다시 묻지 않는다', () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await textSizeAsked(), isFalse);
+    await markTextSizeAsked();
+    expect(await textSizeAsked(), isTrue);
+  });
 }

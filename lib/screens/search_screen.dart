@@ -7,6 +7,7 @@ import '../data/providers.dart';
 import '../models/models.dart';
 import '../widgets/drug_widgets.dart';
 import '../widgets/state_views.dart';
+import '../widgets/photo_search.dart';
 import '../widgets/voice_search.dart';
 import 'drug_detail_screen.dart';
 
@@ -96,6 +97,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _search(q);
   }
 
+  /// 사진으로 찾기: 고른 후보를 검색창에 넣고 바로 검색
+  Future<void> _photo() async {
+    final q = await showPhotoSearch(context, ref);
+    if (!mounted || q == null || q.isEmpty) return;
+    _debounce?.cancel();
+    _controller.text = q;
+    _search(q);
+  }
+
   Future<void> _loadMore() async {
     if (_loading || _loadingMore || !_hasMore || _query.isEmpty) return;
     final gen = _generation;
@@ -134,7 +144,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             textInputAction: TextInputAction.search,
             style: const TextStyle(fontSize: 19),
             decoration: InputDecoration(
-              hintText: '약 이름을 입력하세요 (예: 타이레놀)',
+              hintText: '약 이름 검색', // 큰 글자에서도 잘리지 않게 짧게
               prefixIcon: const Icon(Icons.search),
               suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (_controller.text.isNotEmpty)
@@ -147,6 +157,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       _search('');
                     },
                   ),
+                IconButton(
+                  tooltip: '사진으로 찾기',
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  onPressed: _photo,
+                ),
                 IconButton(
                   tooltip: '말로 찾기',
                   icon: const Icon(Icons.mic),
@@ -166,13 +181,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return EmptyView(
         icon: Icons.medication_liquid_outlined,
         title: '먹고 있는 약을 검색해 보세요',
-        message: '약 봉투나 상자에 적힌 이름으로 찾을 수 있어요.\n입력이 어려우면 말로 찾아도 돼요.',
-        action: FilledButton.icon(
-          onPressed: _voice,
-          icon: const Icon(Icons.mic, size: 26),
-          label: const Text('말로 약 찾기', style: TextStyle(fontSize: 18)),
-          style: FilledButton.styleFrom(minimumSize: const Size(220, 56)),
-        ),
+        // 큰 글자에서도 한 단어만 떨어져 남지 않게 짧은 줄로 미리 나눔
+        message: '약 봉투나 상자에 적힌\n이름을 입력해 주세요.\n어려우면 말이나 사진으로\n찾을 수 있어요.',
+        action: Column(children: [
+          FilledButton.icon(
+            onPressed: _voice,
+            icon: const Icon(Icons.mic, size: 26),
+            label: const Text('말로 약 찾기', style: TextStyle(fontSize: 18)),
+            style: FilledButton.styleFrom(minimumSize: const Size(230, 56)),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _photo,
+            icon: const Icon(Icons.photo_camera_outlined, size: 26),
+            label: const Text('사진으로 약 찾기', style: TextStyle(fontSize: 18)),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(230, 56)),
+          ),
+        ]),
       );
     }
     if (_loading) return const LoadingView(message: '찾는 중이에요');

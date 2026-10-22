@@ -30,6 +30,25 @@ class LargeTextNotifier extends StateNotifier<bool> {
   }
 }
 
+/// 처음 '오늘' 탭에 들어왔을 때 글자 크기를 한 번 물어봤는지 (이 폰 기준)
+const _askedKey = 'large_text_asked';
+
+Future<bool> textSizeAsked() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    return p.getBool(_askedKey) ?? false;
+  } catch (_) {
+    return true; // 저장소를 못 읽으면 묻지 않음 (매번 뜨는 것보다 나음)
+  }
+}
+
+Future<void> markTextSizeAsked() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_askedKey, true);
+  } catch (_) {}
+}
+
 final largeTextProvider = StateNotifierProvider<LargeTextNotifier, bool>((ref) => LargeTextNotifier());
 
 /// 휴대폰 자체 글자 크기 설정 위에 1.3배를 더함. 너무 커져 화면이 깨지지 않게 최대 2배.

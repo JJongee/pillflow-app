@@ -11,6 +11,7 @@ import 'screens/login_screen.dart';
 import 'screens/my_drugs_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/search_screen.dart';
+import 'widgets/text_size_prompt.dart';
 
 class PillFlowApp extends ConsumerWidget {
   const PillFlowApp({super.key});
@@ -48,15 +49,24 @@ class AuthGate extends ConsumerWidget {
 }
 
 /// 하단 탭 4개: 오늘 · 약 찾기 · 내 약 · 시간표
-class HomeShell extends StatefulWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 가입(또는 이 폰에서 처음 로그인) 후 '오늘' 화면이 뜨면 글자 크기를 한 번만 물어봄
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) maybeAskTextSize(context, ref);
+    });
+  }
 
   static const _pages = <Widget>[
     IntakeScreen(),

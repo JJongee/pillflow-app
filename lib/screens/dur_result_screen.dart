@@ -485,7 +485,7 @@ class _CautionBody extends ConsumerWidget {
         Text('$prefix · ${a.label}', style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w800)),
         if (c.appliesNote != null) ...[
           const SizedBox(height: 4),
-          Text(c.appliesNote!, style: t.bodyMedium?.copyWith(fontSize: 15)),
+          Text(keepWords(c.appliesNote!), style: t.bodyMedium?.copyWith(fontSize: 15)),
         ],
         if (action != null) action,
       ]),
@@ -525,7 +525,7 @@ class _CautionBody extends ConsumerWidget {
         c.efficacyGroup == null &&
         c.ingredients.isEmpty;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(c.hint, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+      Text(keepWords(c.hint), style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
       if (c.applies != null) _appliesBox(context, ref, c),
       ...rows,
       // 정보가 비어 있어도 '괜찮음'으로 보이지 않게
