@@ -27,8 +27,20 @@ class EmptyView extends StatelessWidget {
   final Widget? action;
 
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
+  // 키보드가 올라와 공간이 줄면 잘리지 않고 스크롤되게 (공간이 넉넉하면 지금처럼 가운데)
+  // ListView 안처럼 높이 제한이 없는 곳(오늘 화면)에서는 그대로 그림
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, box) => !box.hasBoundedHeight
+            ? Center(child: _body(context))
+            : SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: box.maxHeight),
+                  child: Center(child: _body(context)),
+                ),
+              ),
+      );
+
+  Widget _body(BuildContext context) => Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 64, color: Toss.grey300),
@@ -40,8 +52,7 @@ class EmptyView extends StatelessWidget {
             ],
             if (action != null) ...[const SizedBox(height: 20), action!],
           ]),
-        ),
-      );
+        );
 }
 
 class ErrorView extends StatelessWidget {
