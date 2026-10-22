@@ -7,6 +7,7 @@ import '../data/providers.dart';
 import '../models/models.dart';
 import '../widgets/drug_widgets.dart';
 import '../widgets/state_views.dart';
+import '../widgets/voice_search.dart';
 import 'drug_detail_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -86,6 +87,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
+  /// 말로 찾기: 인식한 이름을 검색창에 넣고 바로 검색
+  Future<void> _voice() async {
+    final q = await showVoiceSearch(context);
+    if (!mounted || q == null || q.isEmpty) return;
+    _debounce?.cancel();
+    _controller.text = q;
+    _search(q);
+  }
+
   Future<void> _loadMore() async {
     if (_loading || _loadingMore || !_hasMore || _query.isEmpty) return;
     final gen = _generation;
@@ -126,17 +136,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             decoration: InputDecoration(
               hintText: '약 이름을 입력하세요 (예: 타이레놀)',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: _controller.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: '지우기',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _debounce?.cancel();
-                        _controller.clear();
-                        _search('');
-                      },
-                    ),
+              suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (_controller.text.isNotEmpty)
+                  IconButton(
+                    tooltip: '지우기',
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _debounce?.cancel();
+                      _controller.clear();
+                      _search('');
+                    },
+                  ),
+                IconButton(
+                  tooltip: '말로 찾기',
+                  icon: const Icon(Icons.mic),
+                  onPressed: _voice,
+                ),
+              ]),
             ),
           ),
         ),
@@ -147,10 +163,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _results(Set<String> mine) {
     if (_query.isEmpty) {
-      return const EmptyView(
+      return EmptyView(
         icon: Icons.medication_liquid_outlined,
         title: '먹고 있는 약을 검색해 보세요',
-        message: '약 봉투나 상자에 적힌 이름으로 찾을 수 있어요.',
+        message: '약 봉투나 상자에 적힌 이름으로 찾을 수 있어요.\n입력이 어려우면 말로 찾아도 돼요.',
+        action: FilledButton.icon(
+          onPressed: _voice,
+          icon: const Icon(Icons.mic, size: 26),
+          label: const Text('말로 약 찾기', style: TextStyle(fontSize: 18)),
+          style: FilledButton.styleFrom(minimumSize: const Size(220, 56)),
+        ),
       );
     }
     if (_loading) return const LoadingView(message: '찾는 중이에요');
