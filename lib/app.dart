@@ -5,23 +5,35 @@ import 'core/config.dart';
 import 'core/nav.dart';
 import 'core/theme.dart';
 import 'data/providers.dart';
+import 'data/text_size.dart';
 import 'screens/intake_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/my_drugs_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/search_screen.dart';
 
-class PillFlowApp extends StatelessWidget {
+class PillFlowApp extends ConsumerWidget {
   const PillFlowApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: '필플로우',
-        navigatorKey: navigatorKey,
-        debugShowCheckedModeBanner: false,
-        theme: buildTheme(),
-        home: const AuthGate(),
-      );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final large = ref.watch(largeTextProvider);
+    return MaterialApp(
+      title: '필플로우',
+      navigatorKey: navigatorKey,
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(),
+      // 글자 크게 보기: 모든 화면의 글자 배율을 한 곳에서 바꿈
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: appTextScaler(mq.textScaler, large)),
+          child: child!,
+        );
+      },
+      home: const AuthGate(),
+    );
+  }
 }
 
 /// 로그인 전이면 로그인 화면, 로그인 후면 홈

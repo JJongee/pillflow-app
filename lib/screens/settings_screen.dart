@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
 import '../data/providers.dart';
+import '../data/text_size.dart';
 import '../models/models.dart';
 import 'my_info_screen.dart';
 import 'state_preview_screen.dart';
 
-/// 설정: 태어난 해 · 데이터 출처 · 이용 안내 · 실행 모드 · 로그아웃
+/// 설정: 내 정보 · 글자 크게 보기 · 데이터 출처 · 이용 안내 · 실행 모드 · 로그아웃
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -49,6 +50,14 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: Text(_summary(profile)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyInfoScreen())),
+        ),
+        header('보기'),
+        SwitchListTile(
+          secondary: const Icon(Icons.text_increase),
+          title: const Text('글자 크게 보기'),
+          subtitle: const Text('앱의 모든 글자를 크게 보여 줘요.'),
+          value: ref.watch(largeTextProvider),
+          onChanged: (v) => ref.read(largeTextProvider.notifier).set(v),
         ),
         header('데이터 출처'),
         const ListTile(
