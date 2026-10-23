@@ -53,6 +53,8 @@ class Schedule(Base):
     # 1회 복용량을 숫자와 단위로 나눠 둔다. 자동 용량 판정은 아직 하지 않고 기록만 한다.
     dose_amount: Mapped[float | None] = mapped_column(Numeric(10, 3), default=None)
     dose_unit: Mapped[str | None] = mapped_column(String(10), default=None)
+    # 시간표를 만든 시각. 달력에서 '약 없음'(시간표가 생기기 전 날짜)을 가르는 기준 (10/22).
+    created_at: Mapped[dt.datetime] = mapped_column(server_default=func.now())
 
 
 class IntakeLog(Base):

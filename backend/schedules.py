@@ -206,6 +206,100 @@ def list_intakes(
     return [intake_out(s, ud, date, logs.get(s.id)) for s, ud in rows]
 
 
+# ---------- 기간 복용 요약 (달력·이번 주 줄, 고연수 10/22 요청) ----------
+
+MAX_SUMMARY_DAYS = 93  # 석 달치까지. 달력 한 화면이면 충분하고, 더 길면 나눠서 부른다.
+DayStatus = Literal["NO_DRUG", "UPCOMING", "ALL_TAKEN", "PARTIAL", "NONE_TAKEN"]
+
+
+class DaySummary(BaseModel):
+    date: str
+    scheduled: int   # 그날 먹기로 돼 있던 시간표 수
+    taken: int
+    skipped: int
+    pending: int     # 기록이 없는 수
+    day_status: DayStatus
+
+
+def schedule_applies(s: Schedule, ud: UserDrug, day: dt.date, has_log: bool) -> bool:
+    """그날 그 시간표가 '먹기로 돼 있던' 시간표인지.
+
+    - 그날 기록(TAKEN/SKIPPED)이 있으면 무조건 포함한다.
+    - 복용 시작일이 있으면 그날부터, 없으면 시간표를 만든 날부터 센다.
+      → 시간표가 생기기 전 날짜는 '안 먹음'이 아니라 '약 없음'이 된다.
+    - 복용 종료일이 있으면 그날까지만 센다.
+    """
+    if has_log:
+        return True
+    start = ud.started_on or (s.created_at.date() if s.created_at else None)
+    if start is not None and day < start:
+        return False
+    if ud.ended_on is not None and day > ud.ended_on:
+        return False
+    return True
+
+
+def day_status_of(day: dt.date, today: dt.date, scheduled: int, taken: int, skipped: int, pending: int) -> str:
+    if scheduled == 0:
+        return "NO_DRUG"
+    if day > today:
+        return "UPCOMING"
+    if taken == scheduled:
+        return "ALL_TAKEN"
+    if taken > 0:
+        return "PARTIAL"
+    return "NONE_TAKEN"  # 전부 건너뜀이거나 아직 기록이 없음 (오늘이면 아직 안 먹은 것일 수 있다)
+
+
+@router.get("/intakes/summary", response_model=list[DaySummary])
+def intakes_summary(
+    from_: dt.date = Query(..., alias="from"),
+    to: dt.date = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """from~to(둘 다 포함) 날짜별 복용 요약. 달력·'이번 주 복용' 줄에 쓴다.
+
+    날짜마다 한 줄씩, 시간표가 없는 날도 NO_DRUG로 돌려준다 (앱이 빈 날을 채울 필요 없음).
+    오늘은 아직 먹을 시각이 안 됐어도 pending으로 세므로, 앱은 오늘 칸을 '진행 중'으로 따로 그려도 된다.
+    """
+    if to < from_:
+        raise HTTPException(422, "to는 from보다 빠를 수 없어요.")
+    if (to - from_).days + 1 > MAX_SUMMARY_DAYS:
+        raise HTTPException(422, f"한 번에 {MAX_SUMMARY_DAYS}일까지만 조회할 수 있어요.")
+    rows = my_schedules(db, user)
+    ids = [s.id for s, _ in rows]
+    logs: dict[tuple[int, dt.date], str] = {}
+    if ids:
+        stmt = select(IntakeLog).where(
+            IntakeLog.schedule_id.in_(ids), IntakeLog.date >= from_, IntakeLog.date <= to
+        )
+        logs = {(log.schedule_id, log.date): log.status for log in db.scalars(stmt)}
+    today = dt.date.today()
+    out = []
+    day = from_
+    while day <= to:
+        scheduled = taken = skipped = pending = 0
+        for s, ud in rows:
+            status = logs.get((s.id, day))
+            if not schedule_applies(s, ud, day, status is not None):
+                continue
+            scheduled += 1
+            if status == "TAKEN":
+                taken += 1
+            elif status == "SKIPPED":
+                skipped += 1
+            else:
+                pending += 1
+        out.append({
+            "date": day.isoformat(),
+            "scheduled": scheduled, "taken": taken, "skipped": skipped, "pending": pending,
+            "day_status": day_status_of(day, today, scheduled, taken, skipped, pending),
+        })
+        day += dt.timedelta(days=1)
+    return out
+
+
 @router.put("/intakes", response_model=IntakeOut)
 def put_intake(
     body: IntakeUpsert,

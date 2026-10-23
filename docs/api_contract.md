@@ -1,9 +1,10 @@
-# 필플로우 API 요청·응답 (v0.3)
+# 필플로우 API 요청·응답 (v0.3.1)
 
 > v0.2 작성: 고연수(앱) · v0.3 정리: 주연우(서버) · 2026-10-11
 > v0.3은 **지금 돌아가는 서버의 실제 동작**입니다. 10/11 고연수 합의로 `backend/API_CHANGES.md` 내용을 여기에 반영했습니다.
 > 앱의 `lib/data/api_repository.dart`와 서버 `backend/`가 이 문서를 따릅니다. 바뀌면 셋 다 고칩니다.
-> 서버 점검은 `backend/check_api.py` 160개로 확인합니다.
+> 서버 점검은 `backend/check_api.py` 167개로 확인합니다.
+> v0.3.1 (10/22): 4-1 기간 복용 요약 `GET /me/intakes/summary` 추가 (달력·'이번 주 복용' 줄). 나머지는 v0.3과 같습니다.
 
 ## 공통 규칙
 
@@ -130,6 +131,25 @@
 바디: `{ "schedule_id": 3, "date": "2026-10-05", "status": "TAKEN" }` → 200, `IntakeRecord` 하나
 - 같은 `schedule_id` + `date`면 덮어씁니다.
 - `status`에 `PENDING`을 보내면 그 기록을 지웁니다(체크 취소).
+
+### 4-1. `GET /me/intakes/summary?from=2026-10-01&to=2026-10-31` (10/22 추가)
+달력과 '이번 주 복용' 줄용. `from`~`to`(둘 다 포함) **날짜마다 한 줄**, 시간표가 없던 날도 옵니다. 한 번에 최대 93일, `to`가 `from`보다 빠르면 422.
+```json
+[
+  { "date": "2026-10-20", "scheduled": 0, "taken": 0, "skipped": 0, "pending": 0, "day_status": "NO_DRUG" },
+  { "date": "2026-10-21", "scheduled": 2, "taken": 2, "skipped": 0, "pending": 0, "day_status": "ALL_TAKEN" },
+  { "date": "2026-10-22", "scheduled": 2, "taken": 1, "skipped": 0, "pending": 1, "day_status": "PARTIAL" },
+  { "date": "2026-10-23", "scheduled": 2, "taken": 0, "skipped": 0, "pending": 2, "day_status": "UPCOMING" }
+]
+```
+- `scheduled`: 그날 먹기로 돼 있던 시간표 수. `taken + skipped + pending = scheduled`
+- `day_status`
+  - `NO_DRUG` — 그날 시간표가 없음 (**시간표를 만들기 전 날짜는 '안 먹음'이 아니라 이것**)
+  - `UPCOMING` — 오늘보다 뒤
+  - `ALL_TAKEN` — 전부 먹음 / `PARTIAL` — 일부만 먹음 / `NONE_TAKEN` — 하나도 안 먹음(건너뜀 또는 기록 없음)
+- 어느 날부터 세는지: 약에 `started_on`이 있으면 그날부터, 없으면 **시간표를 만든 날**부터. `ended_on`이 있으면 그날까지. 단 그날 기록(`TAKEN`/`SKIPPED`)이 있으면 기간과 상관없이 셉니다.
+- **오늘**은 아직 먹을 시각이 안 됐어도 `pending`으로 세서 `NONE_TAKEN`/`PARTIAL`이 될 수 있습니다. 앱은 `date == 오늘`이면 '진행 중'으로 따로 그려도 됩니다 (서버는 시각까지 보지 않음).
+- 시간표를 지우면 그 기록도 같이 사라지므로 지난 날 수치가 줄 수 있습니다 (시간표 삭제 = 기록 삭제, 기존 동작 그대로).
 
 ## 5. 프로필
 

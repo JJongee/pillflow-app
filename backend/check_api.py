@@ -177,6 +177,24 @@ check("먹었어요 기록 → TAKEN", lambda: s == 200 and b["status"] == "TAKE
 s, b = call("GET", "/me/intakes", token=token_a, params={"date": "2026-13-01"})
 check("없는 날짜 → 422", lambda: s == 422, s)
 
+# ---------- 5-1. 기간 복용 요약 (달력·이번 주 줄, 고연수 10/22) ----------
+print("[5-1] 기간 복용 요약")
+import datetime as _dt  # noqa: E402
+_today = _dt.date.fromisoformat(today)
+_d = lambda n: (_today + _dt.timedelta(days=n)).isoformat()
+s, b = call("GET", "/me/intakes/summary", params={"from": _d(-7), "to": _d(1)})
+check("토큰 없이 요약 → 401", lambda: s == 401, s)
+s, b = call("GET", "/me/intakes/summary", token=token_a, params={"from": _d(-7), "to": _d(1)})
+check("9일 조회 → 날짜마다 한 줄 (빈 날도 포함)", lambda: s == 200 and [x["date"] for x in b] == [_d(n) for n in range(-7, 2)], (s, b))
+_by = {x["date"]: x for x in b} if isinstance(b, list) else {}
+check("오늘: 1개 중 1개 먹음 → ALL_TAKEN", lambda: _by[today]["scheduled"] == 1 and _by[today]["taken"] == 1 and _by[today]["day_status"] == "ALL_TAKEN", _by.get(today))
+check("시간표 만들기 전 날 → NO_DRUG ('안 먹음' 아님)", lambda: _by[_d(-1)]["scheduled"] == 0 and _by[_d(-1)]["day_status"] == "NO_DRUG", _by.get(_d(-1)))
+check("내일 → UPCOMING (시간표 1개, pending 1)", lambda: _by[_d(1)]["day_status"] == "UPCOMING" and _by[_d(1)]["pending"] == 1, _by.get(_d(1)))
+s, b = call("GET", "/me/intakes/summary", token=token_a, params={"from": _d(1), "to": _d(0)})
+check("to가 from보다 빠르면 → 422", lambda: s == 422, s)
+s, b = call("GET", "/me/intakes/summary", token=token_a, params={"from": _d(0), "to": _d(93)})
+check("94일 조회 → 422 (최대 93일)", lambda: s == 422, s)
+
 # ---------- 6. 다른 사용자 차단 ----------
 print("[6] 다른 사용자 차단")
 call("POST", "/auth/signup", {"email": email_b, "password": pw})
