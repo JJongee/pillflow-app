@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../widgets/custom_drug_widgets.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/state_views.dart';
 import '../widgets/verdict_badge.dart';
@@ -44,6 +45,8 @@ class DurResultScreen extends ConsumerWidget {
           final pregHit = cautions.where((c) => c.kind == DurKind.pregnancy && c.applies == Applies.yes).toList();
           return ListView(padding: const EdgeInsets.all(16), children: [
             _SummaryCard(hasDanger: hasDanger, undetermined: undetermined, total: r.drugs.length),
+            // 직접 추가 항목(영양제 등)은 확인에서 빠졌다고 알려 줌 (서버 excluded_custom_count)
+            if (r.excludedCustomCount > 0) ExcludedCustomNote(count: r.excludedCustomCount),
             if (r.ageUnknown)
               Card(
                 margin: const EdgeInsets.only(top: 12),
@@ -181,7 +184,11 @@ class _InfoRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 76, child: Text(label, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700))),
+        // 큰 글자(1.3배)에서도 '추가 안내'가 두 줄로 나뉘지 않게 글자 배율만큼 칸을 넓힘 (채은 10/23)
+        SizedBox(
+          width: MediaQuery.textScalerOf(context).scale(76),
+          child: Text(label, softWrap: false, style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+        ),
         Expanded(child: Text(value!, style: t.bodyMedium)),
       ]),
     );

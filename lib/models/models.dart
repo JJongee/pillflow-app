@@ -79,9 +79,25 @@ class DrugDetail extends DrugSummary {
       );
 }
 
+/// 직접 추가 항목의 종류 (api_contract 2-1, 연우 10/23)
+enum CustomKind {
+  supplement('SUPPLEMENT', '영양제'),
+  medicine('MEDICINE', '약'),
+  other('OTHER', '기타');
+
+  final String code;
+  final String label;
+  const CustomKind(this.code, this.label);
+
+  static CustomKind fromCode(String? c) =>
+      CustomKind.values.firstWhere((e) => e.code == c, orElse: () => CustomKind.other);
+}
+
 /// 내가 등록한 약
 class UserDrug {
   final int id;
+
+  /// 직접 추가 항목은 품목코드가 없어서 '' (DUR 확인·상세 화면 대상 아님)
   final String itemSeq;
   final String itemName;
   final String? entpName;
@@ -93,6 +109,10 @@ class UserDrug {
   final String? startedOn;
   final String? endedOn;
 
+  /// 직접 추가 항목 (영양제·목록에 없는 약 등). 복용 관리만 하고 DUR 판정에는 넣지 않음
+  final bool isCustom;
+  final CustomKind? kind;
+
   const UserDrug({
     required this.id,
     required this.itemSeq,
@@ -103,13 +123,25 @@ class UserDrug {
     this.createdAt,
     this.startedOn,
     this.endedOn,
+    this.isCustom = false,
+    this.kind,
   });
 
-  UserDrug copyWith({String? memo, String? startedOn, String? endedOn, bool clearMemo = false, bool setPeriod = false}) =>
+  UserDrug copyWith({
+    String? memo,
+    String? startedOn,
+    String? endedOn,
+    bool clearMemo = false,
+    bool setPeriod = false,
+    String? itemName,
+    CustomKind? kind,
+  }) =>
       UserDrug(
         id: id,
         itemSeq: itemSeq,
-        itemName: itemName,
+        itemName: itemName ?? this.itemName,
+        isCustom: isCustom,
+        kind: kind ?? this.kind,
         entpName: entpName,
         imageUrl: imageUrl,
         memo: clearMemo ? memo : (memo ?? this.memo),
@@ -125,10 +157,14 @@ class UserDrug {
     return '복용 ${f(startedOn)} ~ ${f(endedOn)}'.trimRight();
   }
 
-  factory UserDrug.fromJson(Map<String, dynamic> j) => UserDrug(
+  factory UserDrug.fromJson(Map<String, dynamic> j) {
+    final custom = j['is_custom'] == true;
+    return UserDrug(
         id: j['id'] as int,
-        itemSeq: j['item_seq'].toString(),
-        itemName: j['item_name'] as String,
+        itemSeq: j['item_seq']?.toString() ?? '',
+        itemName: (_str(j['item_name']) ?? _str(j['custom_name']) ?? ''),
+        isCustom: custom,
+        kind: custom ? CustomKind.fromCode(_str(j['kind'])) : null,
         entpName: _str(j['entp_name']),
         imageUrl: _str(j['image_url']),
         memo: _str(j['memo']),
@@ -136,6 +172,7 @@ class UserDrug {
         startedOn: _str(j['started_on']),
         endedOn: _str(j['ended_on']),
       );
+  }
 }
 
 enum MealRelation {
@@ -218,6 +255,37 @@ class IntakeRecord {
         itemName: j['item_name'] as String,
         status: IntakeStatus.fromCode(j['status'] as String?),
         recordedAt: _str(j['recorded_at']),
+      );
+}
+
+/// GET /me/intakes/summary 한 줄 (api_contract 4-1, 연우 10/23)
+/// 시간표가 생기기 전 날짜는 dayStatus 'NO_DRUG', scheduled 0
+class IntakeDaySummary {
+  final String date; // YYYY-MM-DD
+  final int scheduled;
+  final int taken;
+  final int skipped;
+  final int pending;
+  final String? dayStatus;
+
+  const IntakeDaySummary({
+    required this.date,
+    required this.scheduled,
+    required this.taken,
+    required this.skipped,
+    required this.pending,
+    this.dayStatus,
+  });
+
+  static int _int(dynamic v) => v is int ? v : int.tryParse('${v ?? 0}') ?? 0;
+
+  factory IntakeDaySummary.fromJson(Map<String, dynamic> j) => IntakeDaySummary(
+        date: j['date'] as String,
+        scheduled: _int(j['scheduled']),
+        taken: _int(j['taken']),
+        skipped: _int(j['skipped']),
+        pending: _int(j['pending']),
+        dayStatus: _str(j['day_status']),
       );
 }
 
@@ -448,7 +516,7 @@ class DurCaution {
         DurKind.dose => '하루 최대량을 넘지 않게 주의하세요',
         DurKind.elderly => '고령자가 먹을 때 주의가 필요한 약으로 연결돼 있어요',
         DurKind.efficacyDuplicate => '같은 효능군의 약이 함께 있어요. 실제 중복 복용인지는 약사와 확인해 주세요',
-        DurKind.duration => '오래 계속 먹을 때 주의가 필요한 약이에요. 기간 기준은 조건에 따라 달라요',
+        DurKind.duration => '오래 사용할 때 주의가 필요한 약이에요. 기간 기준은 조건에 따라 달라요', // 연고·겔도 있어 '먹을' 대신 '사용' (채은 10/23)
         // '분할 가능'처럼 쪼개도 된다는 뜻으로 읽히는 문구는 쓰지 않음 (정보 없는 약도 마찬가지)
         DurKind.split => '쪼개거나 부수어 먹으면 안 될 수 있는 약이에요. 나눠 먹기 전에 약사와 확인해 주세요',
         DurKind.other => '복용 전에 확인해 주세요',
@@ -505,6 +573,10 @@ class DurCheckResult {
   final Sex? sex;
   final Subject? subject;
 
+  /// 확인에서 뺀 직접 추가 항목 수와 서버 안내 문구 (api_contract 2-1)
+  final int excludedCustomCount;
+  final List<String> notes;
+
   const DurCheckResult({
     this.dataVersion,
     this.checkedAt,
@@ -514,6 +586,8 @@ class DurCheckResult {
     this.cautions = const [],
     this.sex,
     this.subject,
+    this.excludedCustomCount = 0,
+    this.notes = const [],
   });
 
   /// 판정에 들어가는 금기 (병용금기·연령금기)
@@ -538,6 +612,8 @@ class DurCheckResult {
             .toList(),
         sex: j['sex'] == null ? null : Sex.fromCode(_str(j['sex'])),
         subject: j['subject'] == null ? null : Subject.fromCode(_str(j['subject'])),
+        excludedCustomCount: j['excluded_custom_count'] is int ? j['excluded_custom_count'] as int : 0,
+        notes: (j['notes'] as List? ?? const []).map((e) => e.toString()).toList(),
       );
 }
 

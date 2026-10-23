@@ -6,3 +6,6 @@
 -dontwarn com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 -dontwarn com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions$Builder
 -dontwarn com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+-keep class com.google.mlkit.** { *; }
+-keep class com.google_mlkit_text_recognition.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_text_common.** { *; }

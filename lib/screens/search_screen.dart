@@ -10,6 +10,7 @@ import '../widgets/state_views.dart';
 import '../widgets/photo_search.dart';
 import '../widgets/voice_search.dart';
 import 'drug_detail_screen.dart';
+import 'my_drugs_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -128,7 +129,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     // 이미 등록한 약은 검색 결과에 "등록됨" 표시
-    final mine = ref.watch(myDrugsProvider).valueOrNull?.map((d) => d.itemSeq).toSet() ?? const <String>{};
+    final mine = ref.watch(myDrugsProvider).valueOrNull?.where((d) => !d.isCustom).map((d) => d.itemSeq).toSet() ?? const <String>{};
     return Scaffold(
       appBar: AppBar(title: const Text('약 찾기')),
       body: Column(children: [
@@ -206,7 +207,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return EmptyView(
         icon: Icons.search_off,
         title: '"$_query" 검색 결과가 없어요',
-        message: '띄어쓰기 없이, 또는 이름 앞부분만 입력해 보세요.',
+        message: '띄어쓰기 없이, 또는 이름 앞부분만 입력해 보세요.\n영양제나 목록에 없는 약은 직접 추가할 수 있어요.',
+        // 못 찾은 이름을 그대로 넣어 직접 추가 화면으로 (복용 관리만, DUR 확인 제외)
+        action: OutlinedButton.icon(
+          onPressed: () => MyDrugsScreen.addCustom(context, ref, name: _query),
+          icon: const Icon(Icons.add),
+          label: const Text('직접 추가하기'),
+        ),
       );
     }
     final t = Theme.of(context).textTheme;

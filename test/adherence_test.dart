@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pillflow/data/adherence.dart';
 import 'package:pillflow/models/models.dart';
+import 'package:pillflow/widgets/drug_widgets.dart';
 
 IntakeRecord _r(IntakeStatus s) =>
     IntakeRecord(scheduleId: 1, date: '2026-10-20', time: '08:00', itemName: '타이레놀', status: s);
@@ -31,5 +32,29 @@ void main() {
     expect(monthOf(2026, 2).length, 28);
     expect(monthOf(2026, 10).last, DateTime(2026, 10, 31));
     expect(rangeKey(w), ('2026-10-19', '2026-10-25'));
+  });
+
+  test('복용 달력: 오늘 아직 기록 안 한 약이 있으면 진행 중', () {
+    final now = DateTime.now();
+    final pending = IntakeRecord(
+        scheduleId: 1, date: dateString(now), time: '08:00', itemName: '타이레놀', status: IntakeStatus.pending);
+    expect(DaySummary.of(now, [pending]).kind, DayKind.inProgress);
+    expect(DaySummary.of(now, [_r(IntakeStatus.taken)]).kind, DayKind.all);
+    // 지난날은 그대로 못 먹음
+    expect(DaySummary.of(past, [pending]).kind, DayKind.missed);
+  });
+
+  test('복용 달력: 서버 요약(NO_DRUG)은 약 없음', () {
+    const row = IntakeDaySummary(date: '2026-10-20', scheduled: 0, taken: 0, skipped: 0, pending: 0, dayStatus: 'NO_DRUG');
+    expect(DaySummary.fromServer(past, row).kind, DayKind.noMeds);
+    final j = IntakeDaySummary.fromJson(
+        {'date': '2026-10-20', 'scheduled': 3, 'taken': 2, 'skipped': 0, 'pending': 1, 'day_status': 'PARTIAL'});
+    expect(DaySummary.fromServer(past, j).kind, DayKind.partial);
+  });
+
+  test('긴 약 이름: 괄호 안 성분은 따로', () {
+    expect(splitDrugName('타이레놀정500밀리그람(아세트아미노펜)'), ('타이레놀정500밀리그람', '아세트아미노펜'));
+    expect(splitDrugName('베아제정'), ('베아제정', null));
+    expect(splitDrugName('오메가3'), ('오메가3', null));
   });
 }

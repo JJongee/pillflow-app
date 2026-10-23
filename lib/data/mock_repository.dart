@@ -133,7 +133,7 @@ class MockRepository implements PillRepository {
   Future<UserDrug> addMyDrug(String itemSeq, {String? memo}) async {
     await _load();
     await _delay();
-    if (_myDrugs.any((d) => d.itemSeq == itemSeq)) {
+    if (_myDrugs.any((d) => !d.isCustom && d.itemSeq == itemSeq)) {
       throw RepoException('이미 등록한 약이에요.', code: 'DUPLICATE');
     }
     final j = _drugJson(itemSeq);
@@ -148,6 +148,59 @@ class MockRepository implements PillRepository {
     );
     _myDrugs.add(d);
     return d;
+  }
+
+  /// 서버 2-1 흉내: 품목코드 없이 이름만. 같은 이름(띄어쓰기 무시) → DUPLICATE
+  @override
+  Future<UserDrug> addCustomDrug(String name, {CustomKind kind = CustomKind.other, String? memo}) async {
+    await _delay();
+    final n = name.trim();
+    if (n.isEmpty || n.length > 50) throw RepoException('입력값을 확인해 주세요.', code: 'VALIDATION_ERROR');
+    _checkCustomName(n);
+    final d = UserDrug(
+      id: _nextId++,
+      itemSeq: '',
+      itemName: n,
+      memo: memo,
+      createdAt: _today(),
+      isCustom: true,
+      kind: kind,
+    );
+    _myDrugs.add(d);
+    return d;
+  }
+
+  @override
+  Future<UserDrug> updateCustomDrug(int id, {required String name, required CustomKind kind}) async {
+    await _delay();
+    final i = _myDrugs.indexWhere((d) => d.id == id && d.isCustom);
+    if (i < 0) throw RepoException('항목을 찾을 수 없어요.', code: 'NOT_FOUND');
+    final n = name.trim();
+    if (n.isEmpty || n.length > 50) throw RepoException('입력값을 확인해 주세요.', code: 'VALIDATION_ERROR');
+    _checkCustomName(n, exceptId: id);
+    final d = _myDrugs[i].copyWith(itemName: n, kind: kind);
+    _myDrugs[i] = d;
+    // 시간표에 보이는 이름도 같이
+    for (var k = 0; k < _schedules.length; k++) {
+      final o = _schedules[k];
+      if (o.userDrugId != id) continue;
+      _schedules[k] = ScheduleItem(
+        id: o.id,
+        userDrugId: o.userDrugId,
+        itemName: n,
+        time: o.time,
+        mealRelation: o.mealRelation,
+        doseText: o.doseText,
+      );
+    }
+    return d;
+  }
+
+  void _checkCustomName(String name, {int? exceptId}) {
+    final key = normalizeForSearch(name);
+    if (_myDrugs.any((d) => d.isCustom && d.id != exceptId && normalizeForSearch(d.itemName) == key)) {
+      throw RepoException('이미 같은 이름으로 추가했어요.', code: 'DUPLICATE');
+    }
   }
 
   @override
@@ -241,6 +294,32 @@ class MockRepository implements PillRepository {
   @override
   Future<List<IntakeRecord>> getIntakes(String date) async {
     await _delay();
+    return _intakesOn(date);
+  }
+
+  /// 서버 4-1 흉내: 하루 한 줄, 빈 날 포함. 시간표가 생기기 전 날짜는 NO_DRUG
+  @override
+  Future<List<IntakeDaySummary>> getIntakeSummary(String from, String to) async {
+    await _delay();
+    final start = DateTime.parse(from), end = DateTime.parse(to);
+    final out = <IntakeDaySummary>[];
+    for (var d = start; !d.isAfter(end); d = DateTime(d.year, d.month, d.day + 1)) {
+      final date = dateString(d);
+      final list = _intakesOn(date);
+      int count(IntakeStatus st) => list.where((r) => r.status == st).length;
+      out.add(IntakeDaySummary(
+        date: date,
+        scheduled: list.length,
+        taken: count(IntakeStatus.taken),
+        skipped: count(IntakeStatus.skipped),
+        pending: count(IntakeStatus.pending),
+        dayStatus: list.isEmpty ? 'NO_DRUG' : null,
+      ));
+    }
+    return out;
+  }
+
+  List<IntakeRecord> _intakesOn(String date) {
     final list = [..._schedules.where((s) => (_scheduleCreatedOn[s.id] ?? '') .compareTo(date) <= 0)]
       ..sort((a, b) => a.time.compareTo(b.time));
     return list
@@ -298,7 +377,9 @@ class MockRepository implements PillRepository {
   Future<DurCheckResult> checkDur({List<String>? itemSeqs}) async {
     await _load();
     await _delay();
-    final seqs = itemSeqs ?? _myDrugs.map((d) => d.itemSeq).toList();
+    // 직접 추가 항목은 품목코드가 없어 확인 대상이 아님 → 개수만 알려 줌 (서버 2-1)
+    final seqs = itemSeqs ?? _myDrugs.where((d) => !d.isCustom).map((d) => d.itemSeq).toList();
+    final excluded = itemSeqs == null ? _myDrugs.where((d) => d.isCustom).length : 0;
     final covered = (_rules['dur_covered_item_seqs'] as List).cast<String>().toSet();
     final findings = <DurFinding>[];
 
@@ -370,6 +451,8 @@ class MockRepository implements PillRepository {
       cautions: cautions,
       sex: _sex,
       subject: _subject,
+      excludedCustomCount: excluded,
+      notes: [if (excluded > 0) '직접 추가한 항목 $excluded개는 확인 대상이 아니에요.'],
     );
   }
 
@@ -377,7 +460,9 @@ class MockRepository implements PillRepository {
   @override
   Future<ScheduleSuggestResult> suggestSchedules({List<int>? userDrugIds}) async {
     await _load();
-    final targets = _myDrugs.where((d) => userDrugIds == null || userDrugIds.contains(d.id)).toList();
+    // 직접 추가 항목은 용법 정보가 없어 제안하지 않음 (서버 2-1)
+    final targets =
+        _myDrugs.where((d) => !d.isCustom && (userDrugIds == null || userDrugIds.contains(d.id))).toList();
     const base = {'breakfast': '08:00', 'lunch': '12:30', 'dinner': '18:30', 'bedtime': '22:30'};
     final out = <ScheduleSuggestion>[];
     for (final d in targets) {

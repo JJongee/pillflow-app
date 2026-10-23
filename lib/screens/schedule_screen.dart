@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
+import '../widgets/custom_drug_widgets.dart';
 import '../widgets/dose_field.dart';
+import '../widgets/drug_widgets.dart';
 import '../widgets/state_views.dart';
 import 'schedule_suggest_screen.dart';
 
@@ -36,22 +38,17 @@ class ScheduleScreen extends ConsumerWidget {
       _openSheet(context, ref, drugs: const [], existing: s);
 
   Future<void> _openSheet(BuildContext context, WidgetRef ref,
-      {required List<UserDrug> drugs, ScheduleItem? existing}) async {
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _ScheduleSheet(drugs: drugs, existing: existing),
-    );
-    if (saved == true) {
-      ref.invalidate(schedulesProvider);
-      ref.invalidate(intakesProvider(todayString()));
-    }
-  }
+          {required List<UserDrug> drugs, ScheduleItem? existing}) =>
+      openScheduleSheet(context, ref, drugs: drugs, existing: existing);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final value = ref.watch(schedulesProvider);
+    // 직접 추가 항목은 시간표에서도 '직접 추가' 배지
+    final customIds = {
+      for (final m in ref.watch(myDrugsProvider).valueOrNull ?? const <UserDrug>[])
+        if (m.isCustom) m.id
+    };
     return Scaffold(
       appBar: AppBar(
         title: const Text('복용 시간표'),
@@ -95,8 +92,12 @@ class ScheduleScreen extends ConsumerWidget {
             itemBuilder: (context, i) {
               final s = list[i];
               return ListTile(
-                leading: Text(s.time, style: Theme.of(context).textTheme.titleLarge),
-                title: Text(s.itemName),
+                leading: Text(s.time, softWrap: false, style: Theme.of(context).textTheme.titleLarge),
+                title: DrugNameText(
+                  s.itemName,
+                  style: Theme.of(context).textTheme.titleMedium,
+                  trailing: customIds.contains(s.userDrugId) ? const CustomBadge() : null,
+                ),
                 subtitle: Text([s.mealRelation.label, s.doseText].whereType<String>().join(' · ')),
                 onTap: () => _edit(context, ref, s), // 눌러서 수정
                 trailing: IconButton(
@@ -146,17 +147,33 @@ class ScheduleScreen extends ConsumerWidget {
   }
 }
 
+/// 복용 시간 시트 열기 (내 약 '직접 추가' 다음에도 바로 씀). 저장하면 true
+Future<bool> openScheduleSheet(BuildContext context, WidgetRef ref,
+    {required List<UserDrug> drugs, ScheduleItem? existing}) async {
+  final saved = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => ScheduleSheet(drugs: drugs, existing: existing),
+  );
+  if (saved == true) {
+    ref.invalidate(schedulesProvider);
+    ref.invalidate(intakesProvider(todayString()));
+  }
+  return saved == true;
+}
+
 /// 복용 시간 추가/수정 시트. [existing] 이 있으면 수정 모드(약은 바꿀 수 없음).
-class _ScheduleSheet extends ConsumerStatefulWidget {
-  const _ScheduleSheet({required this.drugs, this.existing});
+class ScheduleSheet extends ConsumerStatefulWidget {
+  const ScheduleSheet({super.key, required this.drugs, this.existing});
   final List<UserDrug> drugs;
   final ScheduleItem? existing;
 
   @override
-  ConsumerState<_ScheduleSheet> createState() => _ScheduleSheetState();
+  ConsumerState<ScheduleSheet> createState() => _ScheduleSheetState();
 }
 
-class _ScheduleSheetState extends ConsumerState<_ScheduleSheet> {
+class _ScheduleSheetState extends ConsumerState<ScheduleSheet> {
   bool get _isEdit => widget.existing != null;
   late UserDrug? _drug = widget.drugs.isEmpty ? null : widget.drugs.first;
   late TimeOfDay _time = _parse(widget.existing?.time) ?? const TimeOfDay(hour: 8, minute: 30);

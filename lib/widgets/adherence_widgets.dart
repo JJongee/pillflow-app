@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme.dart';
 import '../data/adherence.dart';
+import '../data/providers.dart';
 import '../models/models.dart';
 import '../screens/adherence_calendar_screen.dart';
+import 'custom_drug_widgets.dart';
+import 'drug_widgets.dart';
 
 /// 하루 표시 동그라미
 ///  다 먹음: 진한 파랑 + 체크 / 일부: 먹은 비율만큼 채워지는 파란 고리 / 못 먹음: 회색 테두리 / 약 없음: 작은 점 / 앞으로: 비움
+///  진행 중(오늘, 아직 기록 안 한 약이 있음): 흰 바탕 + 먹은 만큼 고리 (아직 '못 먹음'으로 보이지 않게)
 /// 빨강은 '금기' 경고에만 쓰므로 여기서는 쓰지 않음
 class AdherenceDot extends StatelessWidget {
   const AdherenceDot({super.key, required this.summary, this.size = 30});
@@ -26,6 +30,12 @@ class AdherenceDot extends StatelessWidget {
           width: size,
           height: size,
           child: CustomPaint(painter: _RingPainter(s.taken / s.total)),
+        );
+      case DayKind.inProgress:
+        return SizedBox(
+          width: size,
+          height: size,
+          child: CustomPaint(painter: _RingPainter(s.taken / s.total, filled: false)),
         );
       case DayKind.missed:
         return _circle(Colors.white, Toss.grey400, null);
@@ -75,6 +85,7 @@ class AdherenceLegend extends StatelessWidget {
       item(DayKind.partial, '일부'),
       item(DayKind.missed, '못 먹음'),
       item(DayKind.noMeds, '약 없음'),
+      item(DayKind.inProgress, '진행 중'),
     ]);
   }
 
@@ -84,6 +95,8 @@ class AdherenceLegend extends StatelessWidget {
       DayKind.all => DaySummary(day: past, taken: 1, skipped: 0, total: 1),
       DayKind.partial => DaySummary(day: past, taken: 1, skipped: 0, total: 2),
       DayKind.missed => DaySummary(day: past, taken: 0, skipped: 0, total: 1),
+      // 범례용 그림만 (진행 중은 오늘에만 생김)
+      DayKind.inProgress => DaySummary(day: DateTime.now(), taken: 1, skipped: 0, total: 3),
       _ => DaySummary(day: past, taken: 0, skipped: 0, total: 0),
     };
   }
@@ -177,6 +190,7 @@ class _DayCell extends StatelessWidget {
 }
 
 /// 날짜를 누르면: 그날 먹은 약 / 건너뛴 약 / 못 먹은 약
+/// 달력은 요약(숫자)만 받으므로, 약 목록은 시트를 열 때 그날 기록을 불러옴
 Future<void> showDaySheet(BuildContext context, DaySummary s) => showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -185,44 +199,76 @@ Future<void> showDaySheet(BuildContext context, DaySummary s) => showModalBottom
         final t = Theme.of(context).textTheme;
         final d = s.day;
         final title = '${d.month}월 ${d.day}일 (${weekdayLabels[d.weekday - 1]})';
-        final sorted = [...s.records]..sort((a, b) => a.time.compareTo(b.time));
+        final summary = s.total == 0
+            ? '이날은 먹을 약이 없었어요.'
+            : s.kind == DayKind.inProgress
+                ? '${s.taken} / ${s.total} 복용 · 진행 중'
+                : '${s.taken} / ${s.total} 복용';
         return SafeArea(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-            child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), children: [
-              Text(title, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(
-                s.total == 0 ? '이날은 먹을 약이 없었어요.' : '${s.taken} / ${s.total} 복용',
-                style: t.bodyLarge?.copyWith(color: Toss.grey600),
-              ),
-              const SizedBox(height: 12),
-              for (final r in sorted)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(children: [
-                    SizedBox(width: 56, child: Text(r.time, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
-                    Expanded(child: Text(r.itemName, style: t.bodyLarge)),
-                    const SizedBox(width: 8),
-                    _StatusChip(status: r.status),
-                  ]),
-                ),
-            ]),
+            child: Consumer(builder: (context, ref, _) {
+              final value = s.total == 0 ? null : ref.watch(intakesProvider(dateString(d)));
+              final sorted = [...(value?.valueOrNull ?? const <IntakeRecord>[])]
+                ..sort((a, b) => a.time.compareTo(b.time));
+              // 직접 추가 항목 표시: 시간표 id → 내 약이 직접 추가인지
+              final customDrugIds = {
+                for (final m in ref.watch(myDrugsProvider).valueOrNull ?? const <UserDrug>[])
+                  if (m.isCustom) m.id
+              };
+              final customSchedules = {
+                for (final sc in ref.watch(schedulesProvider).valueOrNull ?? const <ScheduleItem>[])
+                  if (customDrugIds.contains(sc.userDrugId)) sc.id
+              };
+              return ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), children: [
+                Text(title, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(summary, style: t.bodyLarge?.copyWith(color: Toss.grey600)),
+                const SizedBox(height: 12),
+                if (value != null && value.isLoading)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                if (value != null && value.hasError)
+                  Text('약 목록을 불러오지 못했어요.', style: t.bodyMedium),
+                for (final r in sorted)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      // 큰 글자에서도 '07:00'이 한 줄로 (고정 폭 대신 글자 길이만큼, 줄바꿈 금지)
+                      Text(r.time, softWrap: false, style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 12),
+                      // 긴 이름은 성분(괄호)을 아랫줄에 작게
+                      Expanded(
+                        child: DrugNameText(
+                          r.itemName,
+                          style: t.bodyLarge,
+                          trailing: customSchedules.contains(r.scheduleId) ? const CustomBadge() : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _StatusChip(status: r.status, today: s.isToday),
+                    ]),
+                  ),
+              ]);
+            }),
           ),
         );
       },
     );
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.status, this.today = false});
   final IntakeStatus status;
+  final bool today;
 
   @override
   Widget build(BuildContext context) {
     final (label, fg, bg) = switch (status) {
       IntakeStatus.taken => ('먹었어요', Colors.white, Toss.blue),
       IntakeStatus.skipped => ('건너뜀', Toss.grey700, Toss.grey100),
-      IntakeStatus.pending => ('기록 없음', Toss.grey600, Colors.white),
+      IntakeStatus.pending => (today ? '아직' : '기록 없음', Toss.grey600, Colors.white),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -238,15 +284,18 @@ class _StatusChip extends StatelessWidget {
 
 /// 일부 먹은 날: 연한 파랑 바탕 + 회색 고리 위에 먹은 비율만큼 진한 파랑 고리
 class _RingPainter extends CustomPainter {
-  _RingPainter(this.ratio);
+  _RingPainter(this.ratio, {this.filled = true});
   final double ratio;
+
+  /// false: 진행 중(오늘) — 바탕을 비워 '일부'와 구분
+  final bool filled;
 
   @override
   void paint(Canvas canvas, Size size) {
     final stroke = size.width * 0.14;
     final rect = Offset.zero & size;
     final inner = rect.deflate(stroke / 2);
-    canvas.drawCircle(rect.center, size.width / 2, Paint()..color = Toss.blue50);
+    if (filled) canvas.drawCircle(rect.center, size.width / 2, Paint()..color = Toss.blue50);
     canvas.drawArc(inner, 0, 6.2832, false,
         Paint()
           ..style = PaintingStyle.stroke
@@ -261,5 +310,5 @@ class _RingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.ratio != ratio;
+  bool shouldRepaint(_RingPainter old) => old.ratio != ratio || old.filled != filled;
 }

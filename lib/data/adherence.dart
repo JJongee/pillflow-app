@@ -4,36 +4,46 @@ import '../models/models.dart';
 import 'providers.dart';
 import 'repository.dart';
 
-/// 복용 달력 — 날짜별로 다 먹음 / 일부 / 못 먹음 / 약 없음
-enum DayKind { all, partial, missed, noMeds, future }
+/// 복용 달력 — 날짜별로 다 먹음 / 일부 / 못 먹음 / 약 없음 / 진행 중(오늘)
+enum DayKind { all, partial, missed, noMeds, inProgress, future }
 
 class DaySummary {
   final DateTime day;
   final int taken;
   final int skipped;
   final int total;
-  final List<IntakeRecord> records;
 
-  const DaySummary({
+  /// 아직 기록 안 한 칸 (서버 pending)
+  final int pending;
+
+  /// 서버 day_status ('NO_DRUG' 등). 없으면 숫자로 판단
+  final String? dayStatus;
+
+  DaySummary({
     required this.day,
     required this.taken,
     required this.skipped,
     required this.total,
-    this.records = const [],
-  });
+    int? pending,
+    this.dayStatus,
+  }) : pending = pending ?? (total - taken - skipped);
 
   const DaySummary.future(this.day)
       : taken = 0,
         skipped = 0,
         total = 0,
-        records = const [];
+        pending = 0,
+        dayStatus = null;
 
   bool get isFuture => _onlyDate(day).isAfter(_onlyDate(DateTime.now()));
+  bool get isToday => _onlyDate(day) == _onlyDate(DateTime.now());
 
   DayKind get kind {
     if (isFuture) return DayKind.future;
-    if (total == 0) return DayKind.noMeds;
+    if (total == 0 || dayStatus == 'NO_DRUG') return DayKind.noMeds;
     if (taken >= total) return DayKind.all;
+    // 오늘은 아직 하루가 안 끝났으니 '못 먹음'이 아니라 '진행 중' (연우 10/23: 앱에서 처리)
+    if (isToday && pending > 0) return DayKind.inProgress;
     if (taken == 0) return DayKind.missed;
     return DayKind.partial;
   }
@@ -43,7 +53,15 @@ class DaySummary {
         taken: list.where((r) => r.status == IntakeStatus.taken).length,
         skipped: list.where((r) => r.status == IntakeStatus.skipped).length,
         total: list.length,
-        records: list,
+      );
+
+  static DaySummary fromServer(DateTime day, IntakeDaySummary r) => DaySummary(
+        day: day,
+        taken: r.taken,
+        skipped: r.skipped,
+        total: r.scheduled,
+        pending: r.pending,
+        dayStatus: r.dayStatus,
       );
 }
 
@@ -63,13 +81,34 @@ List<DateTime> monthOf(int year, int month) {
 
 const weekdayLabels = ['월', '화', '수', '목', '금', '토', '일'];
 
-/// 지금 서버는 하루씩만 복용 기록을 줘서 날짜마다 따로 부름 (오늘 이후는 부르지 않음)
-/// TODO: 서버에 기간 조회 API(GET /me/intakes?from=&to=)가 생기면 한 번에 받기
-Future<List<DaySummary>> summarizeDays(PillRepository repo, List<DateTime> days) => Future.wait(days.map((d) async {
-      final s = DaySummary.future(d);
-      if (s.isFuture) return s;
-      return DaySummary.of(d, await repo.getIntakes(dateString(d)));
-    }));
+/// 기간 요약 API(GET /me/intakes/summary) 한 번으로 받기. 오늘 이후는 '앞으로'
+/// 요약 API가 없는 예전 서버면 날짜마다 따로 부름 (로그인 만료는 그대로 알림)
+Future<List<DaySummary>> summarizeDays(PillRepository repo, List<DateTime> days) async {
+  if (days.isEmpty) return const [];
+  final past = days.where((d) => !DaySummary.future(d).isFuture).toList();
+  Map<String, IntakeDaySummary> rows = const {};
+  if (past.isNotEmpty) {
+    try {
+      final list = await repo.getIntakeSummary(dateString(past.first), dateString(past.last));
+      rows = {for (final r in list) r.date: r};
+    } on RepoException catch (e) {
+      if (e.code == 'UNAUTHORIZED' || e.code == 'NETWORK') rethrow;
+      return Future.wait(days.map((d) async {
+        final s = DaySummary.future(d);
+        if (s.isFuture) return s;
+        return DaySummary.of(d, await repo.getIntakes(dateString(d)));
+      }));
+    }
+  }
+  return [
+    for (final d in days)
+      DaySummary.future(d).isFuture
+          ? DaySummary.future(d)
+          : rows[dateString(d)] == null
+              ? DaySummary(day: d, taken: 0, skipped: 0, total: 0, dayStatus: 'NO_DRUG')
+              : DaySummary.fromServer(d, rows[dateString(d)]!),
+  ];
+}
 
 /// 키: (시작일, 끝일) 'YYYY-MM-DD'
 final daySummariesProvider = FutureProvider.autoDispose.family<List<DaySummary>, (String, String)>((ref, range) {

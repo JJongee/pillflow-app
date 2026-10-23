@@ -92,3 +92,49 @@ class _InfoSectionState extends State<InfoSection> {
     );
   }
 }
+
+/// 약 이름을 '제품 이름'과 '( ) 안 성분'으로 나눔
+/// 예: '타이레놀정500밀리그람(아세트아미노펜)' → ('타이레놀정500밀리그람', '아세트아미노펜')
+(String, String?) splitDrugName(String name) {
+  final i = name.indexOf('(');
+  if (i <= 0) return (name, null);
+  final main = name.substring(0, i).trim();
+  var sub = name.substring(i + 1).trim();
+  if (sub.endsWith(')')) sub = sub.substring(0, sub.length - 1).trim();
+  return (main, sub.isEmpty ? null : sub);
+}
+
+/// 긴 약 이름: 제품 이름은 크게, 괄호 안 성분은 아랫줄에 작게 (큰 글자에서 어색하게 끊기지 않게)
+class DrugNameText extends StatelessWidget {
+  const DrugNameText(this.name, {super.key, this.style, this.trailing});
+  final String name;
+  final TextStyle? style;
+
+  /// 이름 옆에 붙일 것 (예: '직접 추가' 배지)
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final (main, sub) = splitDrugName(name);
+    final base = style ?? Theme.of(context).textTheme.bodyLarge;
+    final title = trailing == null
+        ? Text(main, style: base)
+        : Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 2,
+            children: [Text(main, style: base), trailing!],
+          );
+    if (sub == null) return title;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      title,
+      const SizedBox(height: 2),
+      Text(sub,
+          style: base?.copyWith(
+            fontSize: (base?.fontSize ?? 16) * 0.8,
+            color: Toss.grey500,
+            fontWeight: FontWeight.w400,
+          )),
+    ]);
+  }
+}

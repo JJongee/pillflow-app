@@ -5,7 +5,10 @@ import '../core/theme.dart';
 import '../data/providers.dart';
 import '../models/models.dart';
 import '../data/adherence.dart';
+import '../data/custom_photos.dart';
 import '../widgets/adherence_widgets.dart';
+import '../widgets/custom_drug_widgets.dart';
+import '../widgets/drug_widgets.dart';
 import '../widgets/state_views.dart';
 import 'settings_screen.dart';
 
@@ -28,6 +31,14 @@ class IntakeScreen extends ConsumerWidget {
     final date = todayString();
     final value = ref.watch(intakesProvider(date));
     final t = Theme.of(context).textTheme;
+    // 직접 추가 항목 표시용: 시간표 id → 내 약 (배지·폰에 저장한 사진)
+    final schedules = ref.watch(schedulesProvider).valueOrNull ?? const <ScheduleItem>[];
+    final drugs = {for (final d in ref.watch(myDrugsProvider).valueOrNull ?? const <UserDrug>[]) d.id: d};
+    final photos = ref.watch(customPhotosProvider).valueOrNull ?? const <int, String>{};
+    final customOf = <int, (UserDrug, String?)>{
+      for (final sc in schedules)
+        if (drugs[sc.userDrugId]?.isCustom ?? false) sc.id: (drugs[sc.userDrugId]!, photos[sc.userDrugId]),
+    };
     return Scaffold(
       appBar: AppBar(
         title: Text('오늘 · $date'),
@@ -72,6 +83,7 @@ class IntakeScreen extends ConsumerWidget {
               ..._byTime(list).entries.map((e) => _TimeCard(
                     time: e.key,
                     records: e.value,
+                    customOf: customOf,
                     onSet: (r, st) => _set(context, ref, r, st),
                   )),
             ]);
@@ -94,9 +106,10 @@ Map<String, List<IntakeRecord>> _byTime(List<IntakeRecord> list) {
 
 /// 한 시간대 카드: 08:00 · 2/3 복용 → 약마다 [먹었어요] [건너뛰기]
 class _TimeCard extends StatelessWidget {
-  const _TimeCard({required this.time, required this.records, required this.onSet});
+  const _TimeCard({required this.time, required this.records, required this.onSet, this.customOf = const {}});
   final String time;
   final List<IntakeRecord> records;
+  final Map<int, (UserDrug, String?)> customOf;
   final void Function(IntakeRecord, IntakeStatus) onSet;
 
   @override
@@ -125,7 +138,7 @@ class _TimeCard extends StatelessWidget {
           ]),
           for (final r in records) ...[
             const Divider(height: 20),
-            _IntakeRow(record: r, onSet: onSet),
+            _IntakeRow(record: r, onSet: onSet, custom: customOf[r.scheduleId]),
           ],
           const SizedBox(height: 8),
         ]),
@@ -135,8 +148,11 @@ class _TimeCard extends StatelessWidget {
 }
 
 class _IntakeRow extends StatelessWidget {
-  const _IntakeRow({required this.record, required this.onSet});
+  const _IntakeRow({required this.record, required this.onSet, this.custom});
   final IntakeRecord record;
+
+  /// 직접 추가 항목이면 (내 약, 사진 경로)
+  final (UserDrug, String?)? custom;
   final void Function(IntakeRecord, IntakeStatus) onSet;
 
   @override
@@ -147,10 +163,15 @@ class _IntakeRow extends StatelessWidget {
     final skipped = r.status == IntakeStatus.skipped;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
+        if (custom != null) ...[
+          CustomDrugThumb(path: custom!.$2, kind: custom!.$1.kind, size: 40),
+          const SizedBox(width: 10),
+        ],
         Expanded(
-          child: Text(
+          child: DrugNameText(
             r.itemName,
             style: t.titleMedium?.copyWith(fontSize: 17, color: skipped ? Toss.grey500 : null),
+            trailing: custom != null ? const CustomBadge() : null,
           ),
         ),
         if (skipped) Text('건너뜀', style: t.bodySmall?.copyWith(fontSize: 14)),

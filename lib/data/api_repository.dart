@@ -124,6 +124,34 @@ class ApiRepository implements PillRepository {
       });
 
   @override
+  Future<UserDrug> addCustomDrug(String name, {CustomKind kind = CustomKind.other, String? memo}) =>
+      _call(() async {
+        try {
+          final r = await _dio.post('/me/drugs', data: {'custom_name': name, 'kind': kind.code, 'memo': memo});
+          return UserDrug.fromJson(r.data as Map<String, dynamic>);
+        } on DioException catch (e) {
+          if (e.response?.statusCode == 409) {
+            throw RepoException('이미 같은 이름으로 추가했어요.', code: 'DUPLICATE');
+          }
+          rethrow;
+        }
+      });
+
+  @override
+  Future<UserDrug> updateCustomDrug(int id, {required String name, required CustomKind kind}) =>
+      _call(() async {
+        try {
+          final r = await _dio.patch('/me/drugs/$id', data: {'custom_name': name, 'kind': kind.code});
+          return UserDrug.fromJson(r.data as Map<String, dynamic>);
+        } on DioException catch (e) {
+          if (e.response?.statusCode == 409) {
+            throw RepoException('이미 같은 이름으로 추가했어요.', code: 'DUPLICATE');
+          }
+          rethrow;
+        }
+      });
+
+  @override
   Future<void> deleteMyDrug(int id) => _call(() async {
         await _dio.delete('/me/drugs/$id');
       });
@@ -184,6 +212,15 @@ class ApiRepository implements PillRepository {
   Future<void> setIntake({required int scheduleId, required String date, required IntakeStatus status}) =>
       _call(() async {
         await _dio.put('/me/intakes', data: {'schedule_id': scheduleId, 'date': date, 'status': status.code});
+      });
+
+  @override
+  Future<List<IntakeDaySummary>> getIntakeSummary(String from, String to) => _call(() async {
+        final r = await _dio.get('/me/intakes/summary', queryParameters: {'from': from, 'to': to});
+        final d = r.data;
+        // 목록으로 오든 {days: [...]}로 오든 받기
+        final rows = d is List ? d : ((d as Map)['days'] ?? d['items'] ?? const []) as List;
+        return rows.cast<Map<String, dynamic>>().map(IntakeDaySummary.fromJson).toList();
       });
 
   @override

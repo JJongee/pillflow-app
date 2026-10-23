@@ -243,6 +243,7 @@ Future<String?> showPhotoSearch(BuildContext context, WidgetRef ref) async {
   List<ScannedLine> scanned = []; // 사진에서 읽은 글자 (확인용)
   Size? imageSize;
   String? error;
+  String? errorDetail;
   try {
     // 사진 크기 (읽은 글자 위치를 사진 위에 표시할 때 씀)
     try {
@@ -260,13 +261,14 @@ Future<String?> showPhotoSearch(BuildContext context, WidgetRef ref) async {
       for (final c in results.whereType<PhotoCandidate>())
         if (names.add(c.firstName)) c,
     ];
-  } catch (_) {
+  } catch (e) {
     error = '사진에서 글자를 읽지 못했어요.';
+    errorDetail = '$e'; // 원인 확인용 (화면 아래 작은 글씨)
   }
   navigator.pop(); // 기다림 표시 닫기
   if (!context.mounted) return null;
 
-  return showModalBottomSheet<String>(
+  final picked = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -276,9 +278,15 @@ Future<String?> showPhotoSearch(BuildContext context, WidgetRef ref) async {
       imagePath: imagePath,
       imageSize: imageSize,
       error: error,
+      errorDetail: errorDetail,
     ),
   );
+  // '다시 찍기'를 누르면 처음(사진 찍기/앨범)부터 다시 (채은 10/23 제안)
+  if (picked == _retry && context.mounted) return showPhotoSearch(context, ref);
+  return picked;
 }
+
+const _retry = '__photo_retry__';
 
 /// 후보마다 다른 색 (빨강은 금기 경고 전용이라 쓰지 않음)
 const _markColors = [Toss.blue, Color(0xFF0E9F6E), Color(0xFFB45309), Color(0xFF7C3AED), Color(0xFF0891B2)];
@@ -291,12 +299,14 @@ class _CandidateSheet extends StatelessWidget {
     required this.imagePath,
     this.imageSize,
     this.error,
+    this.errorDetail,
   });
   final List<PhotoCandidate> found;
   final List<ScannedLine> scanned;
   final String imagePath;
   final Size? imageSize;
   final String? error;
+  final String? errorDetail;
 
   /// 후보가 나온 줄의 위치 (같은 정리 규칙으로 찾음)
   Rect? _boxOf(PhotoCandidate c) {
@@ -371,6 +381,15 @@ class _CandidateSheet extends StatelessWidget {
                 onTap: () => Navigator.pop(context, found[i].searchName),
               ),
             ),
+          // 글자를 하나도 못 읽었을 때: 몇 줄 읽었는지·오류 내용을 작게 보여 줌 (원인 확인용)
+          if (scanned.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '사진에서 읽은 글자 0줄${errorDetail == null ? '' : ' · 오류: $errorDetail'}',
+                style: t.bodySmall?.copyWith(color: Toss.grey500, fontSize: 12),
+              ),
+            ),
           // 사진에서 어떤 글자를 읽었는지 (왜 이 후보가 나왔는지 확인용)
           if (scanned.isNotEmpty)
             ExpansionTile(
@@ -388,6 +407,16 @@ class _CandidateSheet extends StatelessWidget {
               ],
             ),
           const SizedBox(height: 8),
+          // 못 찾았을 때는 바로 다시 찍을 수 있게
+          if (found.isEmpty) ...[
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, _retry),
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: const Text('다시 찍기', style: TextStyle(fontSize: 16)),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+            ),
+            const SizedBox(height: 8),
+          ],
           OutlinedButton(
             onPressed: () => Navigator.pop(context),
             style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),

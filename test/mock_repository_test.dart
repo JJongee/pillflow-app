@@ -205,4 +205,41 @@ void main() {
     await r.setPregnancy(Pregnancy.notPregnant);
     expect(await applies(), Applies.no);
   });
+
+  test('직접 추가: 이름만으로 추가, 같은 이름은 거부, DUR 확인·자동 제안에서 빠짐', () async {
+    final r = MockRepository();
+    await r.addMyDrug(aspirin);
+    final c = await r.addCustomDrug('종합비타민', kind: CustomKind.supplement);
+    expect((c.isCustom, c.itemSeq, c.kind), (true, '', CustomKind.supplement));
+    await expectLater(r.addCustomDrug('종합 비타민'), throwsA(isA<RepoException>()));
+
+    final res = await r.checkDur();
+    expect(res.drugs.map((d) => d.itemSeq), [aspirin]);
+    expect(res.excludedCustomCount, 1);
+    expect(res.notes.single, contains('직접 추가한 항목 1개'));
+
+    final sug = await r.suggestSchedules();
+    expect(sug.suggestions.any((x) => x.userDrugId == c.id), isFalse);
+
+    // 시간표·복용 기록은 똑같이 됨
+    final s = await r.addSchedule(userDrugId: c.id, time: '09:00', mealRelation: MealRelation.after);
+    expect(s.itemName, '종합비타민');
+    final u = await r.updateCustomDrug(c.id, name: '오메가3', kind: CustomKind.supplement);
+    expect(u.itemName, '오메가3');
+    expect((await r.getSchedules()).single.itemName, '오메가3');
+  });
+
+  test('복용 요약: 하루 한 줄, 시간표 만들기 전 날은 NO_DRUG', () async {
+    final r = MockRepository();
+    final d = await r.addMyDrug(aspirin);
+    final s = await r.addSchedule(userDrugId: d.id, time: '08:30', mealRelation: MealRelation.after);
+    final now = DateTime.now();
+    final today = dateString(now);
+    final yesterday = dateString(DateTime(now.year, now.month, now.day - 1));
+    await r.setIntake(scheduleId: s.id, date: today, status: IntakeStatus.taken);
+    final rows = await r.getIntakeSummary(yesterday, today);
+    expect(rows.map((x) => x.date), [yesterday, today]);
+    expect((rows.first.scheduled, rows.first.dayStatus), (0, 'NO_DRUG'));
+    expect((rows.last.scheduled, rows.last.taken, rows.last.pending), (1, 1, 0));
+  });
 }

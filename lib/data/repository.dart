@@ -17,6 +17,12 @@ abstract class PillRepository {
   Future<UserDrug> updateMyDrug(int id, {String? memo});
   Future<void> deleteMyDrug(int id);
 
+  /// 직접 추가 (영양제·목록에 없는 약). 같은 이름이 이미 있으면 DUPLICATE
+  Future<UserDrug> addCustomDrug(String name, {CustomKind kind = CustomKind.other, String? memo});
+
+  /// 직접 추가 항목의 이름·종류 바꾸기
+  Future<UserDrug> updateCustomDrug(int id, {required String name, required CustomKind kind});
+
   // 3. 시간표 (사용자 지정)
   Future<List<ScheduleItem>> getSchedules();
   Future<ScheduleItem> addSchedule({
@@ -39,6 +45,9 @@ abstract class PillRepository {
   // 4. 복용 기록
   Future<List<IntakeRecord>> getIntakes(String date);
   Future<void> setIntake({required int scheduleId, required String date, required IntakeStatus status});
+
+  /// 기간 요약 (하루 한 줄, 빈 날 포함). 달력·이번 주 줄에서 씀
+  Future<List<IntakeDaySummary>> getIntakeSummary(String from, String to);
 
   // 5. 프로필
   Future<Profile> getProfile();
