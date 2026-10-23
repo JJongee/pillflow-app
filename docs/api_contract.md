@@ -3,7 +3,7 @@
 > v0.2 작성: 고연수(앱) · v0.3 정리: 주연우(서버) · 2026-10-11
 > v0.3은 **지금 돌아가는 서버의 실제 동작**입니다. 10/11 고연수 합의로 `backend/API_CHANGES.md` 내용을 여기에 반영했습니다.
 > 앱의 `lib/data/api_repository.dart`와 서버 `backend/`가 이 문서를 따릅니다. 바뀌면 셋 다 고칩니다.
-> 서버 점검은 `backend/check_api.py` 187개로 확인합니다.
+> 서버 점검은 `backend/check_api.py` 189개로 확인합니다.
 > v0.3.2 (10/23): 2-1 직접 추가 항목(영양제 등) — `POST /me/drugs`에 `custom_name`·`kind`, `UserDrug`에 `is_custom`, DUR·제안 응답에 `excluded_custom_count`.
 > v0.3.1 (10/22): 4-1 기간 복용 요약 `GET /me/intakes/summary` 추가 (달력·'이번 주 복용' 줄). 나머지는 v0.3과 같습니다.
 

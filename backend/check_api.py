@@ -384,9 +384,12 @@ check("투여기간 → 기간 원문 그대로 (7일)", lambda: dur_c and dur_c
 s, b = call("POST", "/dur/check", {"item_seqs": ["200200414"]}, token_a)  # linked·pending 둘 다
 states = {c["status"] for c in b.get("cautions", []) if c["type"] == "DURATION"} if isinstance(b, dict) else set()
 check("한 약에 linked와 pending이 같이 있으면 둘 다 남김", lambda: states == {"CONFIRMED", "PENDING"}, states)
+# 제형에 관계없는 문구 (손채은 10/23): 외용제도 있으므로 '먹다' 대신 '사용'으로 통일
+_all_text = json.dumps(b, ensure_ascii=False) if isinstance(b, dict) else ""
+check("참고 정보 문구에 '오래 복용 중'·'함께 먹고'가 없다 (제형 무관 표현)", lambda: "오래 복용 중" not in _all_text and "함께 먹고" not in _all_text and "오래 먹어야" not in _all_text, _all_text[:200])
+check("투여기간 안내는 '사용' 표현 (장기간 사용·더 오래 사용)", lambda: any(("장기간 사용" in (c.get("condition_note") or "")) or ("더 오래 사용" in (c.get("condition_note") or "")) for c in b["cautions"] if c["type"] == "DURATION"), [c.get("condition_note") for c in b.get("cautions", []) if c.get("type") == "DURATION"])
 s, b = call("POST", "/dur/check", {"item_seqs": ["196000011"]}, token_a)
 check("새 3종도 판정(verdict)은 바꾸지 않음", lambda: s == 200 and b["drugs"][0]["verdict"] != "CONTRAINDICATED", s)
-
 # ---------- 12-2. 임부금기·투여기간주의 판정 (손채은 10/11 요청) ----------
 print("[12-2] 임부금기·투여기간 판정")
 s, b = call("GET", "/me/profile", token=token_a)
