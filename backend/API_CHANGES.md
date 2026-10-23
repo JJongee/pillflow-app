@@ -1,6 +1,6 @@
 # API 계약 v0.2 → 실제 서버 차이 (v0.3 제안)
 
-> 작성: 주연우(서버) · 2026-10-11 · 기준: `docs/api_contract.md` v0.2 → **v0.3 반영 완료**, 서버 `backend/` (점검 189개 통과)
+> 작성: 주연우(서버) · 2026-10-11 · 기준: `docs/api_contract.md` v0.2 → **v0.3 반영 완료**, 서버 `backend/` (점검 194개 통과)
 > **10/11 고연수 합의 완료 → `docs/api_contract.md`를 v0.3으로 고쳤습니다.** 이 문서는 v0.2에서 무엇이 바뀌었는지 보는 용도로 남겨 둡니다.
 
 **요약**: 경로·필드 이름·코드값은 v0.2와 같습니다. 바뀐 건 아래 표의 항목뿐이고, 앱이 꼭 고쳐야 하는 건 없습니다.
@@ -10,6 +10,7 @@
 
 | API | 내용 |
 |---|---|
+| 검색·상세·내 약의 `etc_otc`·`rx_required` | 일반/전문 구분(10/23 추가, 김서현 `drugs.etc_otc`). `일반의약품`/`전문의약품`/`null`, `rx_required`는 전문이면 `true`. 예전 덤프에서는 둘 다 `null`. 계약서 1 |
 | 직접 추가 항목 (`POST /me/drugs`에 `custom_name`·`kind`) | 영양제 등 목록에 없는 것을 이름만으로 등록(10/23 추가, 고연수). `UserDrug`에 `is_custom`·`custom_name`·`kind`, `item_name`엔 `custom_name`. DUR·자동 제안에서는 빠지고 `excluded_custom_count`로 알려줌. 계약서 2-1 |
 | `GET /me/intakes/summary?from=&to=` | 기간 복용 요약(10/22 추가, 고연수 달력·이번 주 줄 요청). 날짜마다 `scheduled/taken/skipped/pending/day_status`. 시간표가 생기기 전 날은 `NO_DRUG`(약 없음). 최대 93일. 계약서 4-1 |
 | `POST /auth/signup` | 바디 `{"email", "password"}` → `201 {"id", "email"}`. 이메일은 소문자로 저장. 같은 이메일 `409 DUPLICATE`, 형식 오류·비밀번호 4자 미만 `422` |

@@ -1,9 +1,10 @@
-# 필플로우 API 요청·응답 (v0.3.2)
+# 필플로우 API 요청·응답 (v0.3.3)
 
 > v0.2 작성: 고연수(앱) · v0.3 정리: 주연우(서버) · 2026-10-11
 > v0.3은 **지금 돌아가는 서버의 실제 동작**입니다. 10/11 고연수 합의로 `backend/API_CHANGES.md` 내용을 여기에 반영했습니다.
 > 앱의 `lib/data/api_repository.dart`와 서버 `backend/`가 이 문서를 따릅니다. 바뀌면 셋 다 고칩니다.
-> 서버 점검은 `backend/check_api.py` 189개로 확인합니다.
+> 서버 점검은 `backend/check_api.py` 194개로 확인합니다.
+> v0.3.3 (10/23): 약 검색·상세·내 약에 `etc_otc`(일반/전문)·`rx_required`(처방 필요) 추가.
 > v0.3.2 (10/23): 2-1 직접 추가 항목(영양제 등) — `POST /me/drugs`에 `custom_name`·`kind`, `UserDrug`에 `is_custom`, DUR·제안 응답에 `excluded_custom_count`.
 > v0.3.1 (10/22): 4-1 기간 복용 요약 `GET /me/intakes/summary` 추가 (달력·'이번 주 복용' 줄). 나머지는 v0.3과 같습니다.
 
@@ -56,18 +57,21 @@
 {
   "items": [
     { "item_seq": "200008591", "item_name": "바이엘아스피린정500밀리그람",
-      "entp_name": "바이엘코리아(주)", "image_url": "https://...", "source": "e약은요" }
+      "entp_name": "바이엘코리아(주)", "image_url": "https://...",
+      "etc_otc": "일반의약품", "rx_required": false, "source": "e약은요" }
   ],
   "page": 1, "size": 20, "total": 1
 }
 ```
 - `item_seq`는 **문자열**. 검색은 띄어쓰기를 무시합니다. `q` 없으면 422, `size`는 1~100.
+- `etc_otc`·`rx_required` (10/23 추가, 김서현 `drugs.etc_otc`): `etc_otc`는 허가정보 원문 그대로 `일반의약품`·`전문의약품`·`null`(구분 없음). `rx_required`는 앱 표시용으로 전문의약품이면 `true`("처방 필요"), 일반의약품이면 `false`("처방 없이 구매 가능"), 모르면 `null`(표시하지 않음). 상세(`GET /drugs/{item_seq}`)와 내 약(`GET /me/drugs`)에도 같은 두 칸이 옵니다. 직접 추가 항목은 둘 다 `null`.
 
 ### `GET /drugs/{item_seq}`
 ```json
 {
   "item_seq": "200008591",
   "item_name": "...", "entp_name": "...", "image_url": null,
+  "etc_otc": "일반의약품", "rx_required": false,
   "efficacy": "...", "use_method": "...", "warning": null, "caution": "...",
   "interaction": "...", "side_effect": "...", "storage": "...",
   "open_date": "2021-01-29", "update_date": "2024-05-09", "source": "e약은요"
@@ -103,7 +107,7 @@
 - `item_seq`와 `custom_name` 중 **하나만** 보냅니다. 둘 다 있거나 둘 다 없으면 422.
 - `kind`: `SUPPLEMENT`(영양제·건강보조식품) · `MEDICINE`(목록에 없는 약) · `OTHER`. 안 보내면 `OTHER`.
 - 응답은 `is_custom: true`, `item_seq: null`, `item_name`에 `custom_name`이 그대로 들어갑니다 → 시간표·기록·달력 화면은 고칠 것 없음.
-- 같은 이름(대소문자 무시)을 다시 추가하면 `409 DUPLICATE`.
+- 같은 이름을 다시 추가하면 `409 DUPLICATE`. 비교는 앱과 같은 기준으로 **띄어쓰기·대소문자를 뺀 뒤** 합니다('오메가3' = '오메가 3').
 - `PATCH /me/drugs/{id}`로 `custom_name`·`kind`를 바꿀 수 있습니다(직접 추가 항목만, 약 목록의 약에 보내면 422). `null`로 비우기는 422.
 - `POST /dur/check`(내 약 전체)와 `POST /me/schedules/suggest`는 직접 추가 항목을 빼고 돌려주며, 뺀 개수를 **`excluded_custom_count`**로 줍니다. 0이 아니면 결과 아래에 "직접 추가한 항목 N개는 확인 대상이 아니에요" 한 줄을 넣어 주세요 (`notes`에도 같은 문장이 들어갑니다).
 - 사진은 서버에 올리지 않습니다 (앱 안에만 저장).

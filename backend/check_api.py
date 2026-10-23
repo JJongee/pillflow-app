@@ -91,6 +91,12 @@ s, b = call("GET", "/drugs", params={"q": "타이레놀", "size": 101})
 check("페이지 크기 101 → 422", lambda: s == 422, s)
 s, b = call("GET", "/drugs/202106092")
 check("상세 202106092 (날짜 YYYY-MM-DD)", lambda: s == 200 and b["update_date"] == "2026-06-29" and b["open_date"] == "2023-05-31", s)
+# 일반/전문 구분 (김서현 10/23 덤프 drugs.etc_otc). 예전 덤프면 둘 다 null로 온다.
+_rx_ok = lambda x: (x["etc_otc"], x["rx_required"]) in (("일반의약품", False), ("전문의약품", True), (None, None))
+check("상세에 etc_otc·rx_required 칸 (일반→false, 전문→true, 모르면 null)", lambda: _rx_ok(b), (b.get("etc_otc"), b.get("rx_required")))
+check("타이레놀정500 → 일반의약품, 처방 불필요 (10/23 덤프 이후)", lambda: b["etc_otc"] == "일반의약품" and b["rx_required"] is False, (b.get("etc_otc"), b.get("rx_required")))
+s, b = call("GET", "/drugs", params={"q": "정", "size": 100})
+check("검색 목록에도 etc_otc·rx_required가 있고 서로 어긋나지 않음", lambda: s == 200 and b["items"] and all(_rx_ok(x) for x in b["items"]), s)
 s, b = call("GET", "/drugs/0000")
 check("없는 약 → 404 NOT_FOUND", lambda: s == 404 and code_of(b) == "NOT_FOUND", (s, code_of(b)))
 
@@ -137,6 +143,7 @@ check("두 번째 약 등록 → 201", lambda: s == 201, s)
 drug2 = b.get("id") if isinstance(b, dict) else None
 s, b = call("GET", "/me/drugs", token=token_a)
 check("목록 2개 (YYYY-MM-DD 날짜)", lambda: s == 200 and len(b) == 2 and len(b[0]["created_at"]) == 10, s)
+check("내 약 목록에도 etc_otc·rx_required", lambda: all(_rx_ok(x) for x in b), [(x.get("etc_otc"), x.get("rx_required")) for x in b] if isinstance(b, list) else b)
 s, b = call("PATCH", f"/me/drugs/{drug1}", {"memo": "저녁"}, token_a)
 check("메모 수정", lambda: s == 200 and b["memo"] == "저녁", s)
 
@@ -203,6 +210,8 @@ custom1 = b.get("id") if isinstance(b, dict) else None
 check("item_name에는 적은 이름이 들어감", lambda: b["item_name"] == "오메가3" and b["custom_name"] == "오메가3", b.get("item_name"))
 s, b = call("POST", "/me/drugs", {"custom_name": "오메가3"}, token_a)
 check("같은 이름 다시 추가 → 409 DUPLICATE", lambda: s == 409 and code_of(b) == "DUPLICATE", (s, code_of(b)))
+s, b = call("POST", "/me/drugs", {"custom_name": "오메가 3"}, token_a)
+check("띄어쓰기만 다른 이름('오메가 3')도 → 409 (앱과 같은 기준)", lambda: s == 409 and code_of(b) == "DUPLICATE", (s, code_of(b)))
 s, b = call("POST", "/me/drugs", {"custom_name": "비타민D"}, token_a)
 check("kind를 안 보내면 OTHER", lambda: s == 201 and b["kind"] == "OTHER", (s, b.get("kind") if isinstance(b, dict) else b))
 custom2 = b.get("id") if isinstance(b, dict) else None

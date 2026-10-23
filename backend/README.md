@@ -3,7 +3,7 @@
 ## 준비물
 - Python 3.12
 - PostgreSQL 16 (설치할 때 정한 postgres 비밀번호 기억)
-- 김서현 DB 백업 (최신: `pillflow_20261019_142328_908529_portable_inventory_reviewed.dump`, 주의 5종 + 분할주의 + 함량 검증 88품목 + 용법 조건 후보 30품목 + 수집 이력·근거)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
+- 김서현 DB 백업 (최신: `pillflow_20261023_175856_213892_portable_etc_otc_reviewed.dump`, 주의 5종 + 분할주의 + 일반/전문 구분 + 함량 검증 + 용법 조건 후보 + 수집 이력·근거)과 복원 안내서 (깃에 없음, 팀 카톡에서 받기)
   이 백업은 **누적 전체 백업**입니다. 예전 백업을 따로 복원하거나 예전 수정용 스크립트를 돌릴 필요가 없습니다. (10/16 김서현 확인)
   제한 표 12개(검토 전용 6개 `drug_*_condition_*`·`drug_composition_review_*`, 분할주의 원문 `dur_split_products`, 수집 이력·근거 `data_*` 5개)는 서버가 읽지 않고 앱 계정 권한도 없습니다. `check_api.py` [0-1]이 코드 참조를 점검합니다.
 
@@ -16,7 +16,17 @@
    ```
    10/18 백업부터는 서버가 읽는 기본 표 4개(`drugs`, `drug_images`, `dur_fetch_status`, `dur_interactions`)의 권한이 백업에 들어 있어 **추가 GRANT가 필요 없습니다.** (10/16 백업까지는 따로 GRANT해야 했음)
    권한 확인: `psql -U pillflow_app -d pillflow -c "SELECT count(*) FROM drugs"` 는 4741, `... FROM v_app_split_warnings` 는 185가 나오고, `... FROM dur_split_products` 는 **접근 권한 없음**이 나와야 정상입니다.
-   기존 DB의 사용자 데이터(`users`, `user_drugs`, `schedules`, `intake_logs`)를 옮기려면 TODO.md의 "사용자 데이터 옮기기"를 보세요.
+   10/23 백업(`drugs.etc_otc` 일반/전문 구분)부터는 `psql -U pillflow_app -d pillflow -c "SELECT etc_otc, count(*) FROM drugs GROUP BY 1"` 이 일반의약품 4732 / 전문의약품 9 로 나와야 합니다.
+
+   **새 백업으로 갈아탈 때 사용자 데이터 보존하기** (10/23 김서현 요청). 사용자 표 4개(`users`, `user_drugs`, `schedules`, `intake_logs`)는 서버가 만드는 표라 김서현 백업에 없습니다. 기존 DB에서 이 표만 따로 떠서 새 DB에 넣습니다. 서버는 **끈 상태**에서:
+   ```
+   pg_dump -U pillflow_app -d pillflow -Fc -t users -t user_drugs -t schedules -t intake_logs -f C:\Pbl\db\userdata_<날짜>.dump
+   psql -U postgres -c "ALTER DATABASE pillflow RENAME TO pillflow_v<n>"
+   createdb -U postgres --owner=pillflow_app --encoding=UTF8 pillflow
+   pg_restore -U postgres -d pillflow --no-owner --single-transaction --exit-on-error C:\Pbl\db\<김서현 백업>.dump
+   pg_restore -U pillflow_app -d pillflow --exit-on-error C:\Pbl\db\userdata_<날짜>.dump
+   ```
+   사용자 표는 번호(시퀀스)까지 같이 옮겨지므로 그대로 이어서 쓸 수 있습니다. 확인: `psql -U pillflow_app -d pillflow -c "SELECT count(*) FROM users"` 가 예전과 같으면 됩니다. 그다음 서버를 켜면 빠진 칸만 자동으로 더해집니다.
 2. **라이브러리 설치**: 저장소를 받은 뒤 `backend` 폴더에서 실행합니다.
    ```
    py -3.12 -m venv .venv

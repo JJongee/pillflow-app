@@ -63,6 +63,8 @@ class UserDrugOut(BaseModel):
     kind: str | None
     item_name: str | None  # 직접 추가 항목은 custom_name이 들어간다
     entp_name: str | None
+    etc_otc: str | None  # 일반의약품 / 전문의약품 / null (10/23)
+    rx_required: bool | None
     image_url: str | None
     memo: str | None
     started_on: str | None
@@ -75,6 +77,11 @@ def drug_lookup():
     from drugs import DRUG_BY_SEQ
 
     return DRUG_BY_SEQ
+
+
+def squash_name(value: str) -> str:
+    """이름 비교용: 띄어쓰기 제거 + 소문자. '오메가 3' == '오메가3' == 'OMEGA 3'."""
+    return value.replace(" ", "").lower()
 
 
 def is_custom(ud: UserDrug) -> bool:
@@ -91,6 +98,8 @@ def to_out(ud: UserDrug):
         "kind": ud.kind,
         "item_name": ud.custom_name if is_custom(ud) else d.get("item_name"),
         "entp_name": d.get("entp_name"),
+        "etc_otc": d.get("etc_otc"),
+        "rx_required": d.get("rx_required"),
         "image_url": d.get("image_url"),
         "memo": ud.memo,
         "started_on": ud.started_on.isoformat() if ud.started_on else None,
@@ -124,10 +133,10 @@ def add_my_drug(
     if body.started_on and body.ended_on and body.ended_on < body.started_on:
         raise HTTPException(status_code=422, detail="복용 종료일이 시작일보다 빠를 수 없어요.")
     if body.custom_name is not None:
-        # 직접 추가: 같은 이름(대소문자·공백 무시)이 이미 있으면 409
+        # 직접 추가: 같은 이름이 이미 있으면 409. 앱과 같은 기준으로 띄어쓰기·대소문자를 뺀 뒤 비교 (고연수 10/23)
         exists = db.scalar(
             select(UserDrug).where(UserDrug.user_id == user.id, UserDrug.item_seq.is_(None),
-                                   func.lower(UserDrug.custom_name) == body.custom_name.lower())
+                                   func.lower(func.replace(UserDrug.custom_name, " ", "")) == squash_name(body.custom_name))
         )
         if exists:
             raise HTTPException(status_code=409, detail="이미 같은 이름으로 추가한 항목이 있어요.")

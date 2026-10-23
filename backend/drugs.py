@@ -10,17 +10,23 @@ from sqlalchemy.exc import ProgrammingError
 
 from db import engine
 
-DRUG_SQL = text(
-    """
+# 일반/전문 구분 칸(drugs.etc_otc)은 10/23 김서현 덤프부터 있다. 예전 덤프면 NULL로 채운다.
+ETC_OTC_SQL = text(
+    "SELECT 1 FROM information_schema.columns WHERE table_name = 'drugs' AND column_name = 'etc_otc'"
+)
+DRUG_SQL_TEMPLATE = """
     SELECT d.item_seq, d.item_name, d.entp_name,
            d.efcy_qesitm, d.use_method_qesitm, d.atpn_warn_qesitm, d.atpn_qesitm,
            d.intrc_qesitm, d.se_qesitm, d.deposit_method_qesitm,
            d.open_de, d.update_de,
+           {etc_otc} AS etc_otc,
            (SELECT MIN(i.item_image) FROM drug_images i WHERE i.item_seq = d.item_seq) AS item_image
     FROM drugs d
     ORDER BY d.item_seq
     """
-)
+DRUG_SQL = text(DRUG_SQL_TEMPLATE.format(etc_otc="d.etc_otc"))
+DRUG_SQL_OLD = text(DRUG_SQL_TEMPLATE.format(etc_otc="NULL"))
+ETC_OTC_VALUES = ("일반의약품", "전문의약품")
 
 
 def clean(value):
@@ -54,12 +60,27 @@ def squash(text_value):
     return re.sub(r"\s+", "", text_value).lower()
 
 
+def etc_otc_of(value):
+    value = clean(value)
+    return value if value in ETC_OTC_VALUES else None
+
+
+def rx_required_of(value):
+    value = etc_otc_of(value)
+    if value is None:
+        return None
+    return value == "전문의약품"
+
+
 def row_to_drug(row):
     drug = {
         "item_seq": clean(row["item_seq"]),
         "item_name": clean(row["item_name"]),
         "entp_name": clean(row["entp_name"]),
         "image_url": clean(row["item_image"]),
+        # 일반/전문 구분 (허가정보 원문 그대로). rx_required는 앱 표시용: 전문의약품이면 True, 모르면 None
+        "etc_otc": etc_otc_of(row["etc_otc"]),
+        "rx_required": rx_required_of(row["etc_otc"]),
         "efficacy": clean(row["efcy_qesitm"]),
         "use_method": clean(row["use_method_qesitm"]),
         "warning": clean(row["atpn_warn_qesitm"]),
@@ -78,7 +99,8 @@ def load_drugs():
     """서버가 켜질 때 약 목록을 DB에서 한 번 읽어 둔다."""
     try:
         with engine.connect() as conn:
-            rows = conn.execute(DRUG_SQL).mappings().all()
+            has_etc_otc = conn.execute(ETC_OTC_SQL).first() is not None
+            rows = conn.execute(DRUG_SQL if has_etc_otc else DRUG_SQL_OLD).mappings().all()
     except ProgrammingError as exc:
         raise RuntimeError(
             "drugs 표를 찾을 수 없어요. README의 'DB 복원'을 먼저 하고, .env의 DB 이름을 확인하세요."
@@ -97,6 +119,8 @@ class DrugSummary(BaseModel):
     item_name: str | None
     entp_name: str | None
     image_url: str | None
+    etc_otc: str | None  # 일반의약품 / 전문의약품 / null(구분 없음)
+    rx_required: bool | None  # 처방 필요 여부. 전문의약품 True, 일반의약품 False, 모르면 null
     source: str = "e약은요"
 
 
@@ -112,6 +136,8 @@ class DrugDetail(BaseModel):
     item_name: str | None
     entp_name: str | None
     image_url: str | None
+    etc_otc: str | None
+    rx_required: bool | None
     efficacy: str | None
     use_method: str | None
     warning: str | None
