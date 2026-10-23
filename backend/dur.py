@@ -184,6 +184,7 @@ NOTE_DUPLICATE_SCOPE = "효능군은 약마다 따로 알려 줘요. 효능군�
 UNITS = ("year", "month", "week")
 RANK = {"NO_KNOWN_ISSUE": 0, "UNDETERMINED": 1, "CONTRAINDICATED": 2}
 NOTE_NOT_SAFE = "기록 없음(NO_KNOWN_ISSUE)은 '안전'이 아니라, 수집된 데이터에 금기 기록이 없다는 뜻이에요."
+NOTE_CUSTOM_EXCLUDED = "직접 추가한 항목 {n}개는 확인 대상이 아니에요. 영양제·건강보조식품과 약의 상호작용은 의사·약사에게 확인하세요."
 # 분할주의 (김서현 10/16). 서방정·장용 제형 등 쪼개면 안 되는 약. 서버는 '분할해도 됨'을 절대 말하지 않는다.
 NOTE_SPLIT = "쪼개거나 씹거나 가루로 만들지 말고 그대로 삼키는 약이에요. 나눠 먹어야 하면 의사·약사와 상담하세요."
 NOTE_SPLIT_CONDITIONAL = "원문에 조건이 붙어 있어요. 비고와 허가사항을 확인하기 전에는 분할해도 된다고 보지 않아요."
@@ -236,6 +237,7 @@ class DurCheckResult(BaseModel):
     drugs: list[DurDrug]
     findings: list[DurFinding]
     cautions: list[DurCaution]
+    excluded_custom_count: int  # 직접 추가 항목(영양제 등)은 판정 대상이 아니라 뺀 개수
     notes: list[str]
 
 
@@ -630,9 +632,13 @@ def dur_check(
     db: Session = Depends(get_db),
 ):
     """item_seqs를 빼고 보내면 내 약 전체로 판별한다."""
+    excluded_custom = 0
     if body is None or body.item_seqs is None:
         stmt = select(UserDrug.item_seq).where(UserDrug.user_id == user.id).order_by(UserDrug.id)
-        seqs = unique_seqs(db.scalars(stmt))
+        all_seqs = list(db.scalars(stmt))
+        # 직접 추가 항목(item_seq 없음)은 판정 자료가 없어 뺀다. 뺀 개수는 응답에 알려 준다.
+        excluded_custom = sum(1 for v in all_seqs if v is None)
+        seqs = unique_seqs(all_seqs)
     else:
         seqs = unique_seqs(body.item_seqs)
 
@@ -692,6 +698,8 @@ def dur_check(
         notes.append("임신 여부를 입력하면 해당되는지까지 알려 드릴 수 있어요.")
     elif need_period:
         notes.append("복용 시작일을 입력하면 해당되는지까지 알려 드릴 수 있어요.")
+    if excluded_custom:
+        notes.append(NOTE_CUSTOM_EXCLUDED.format(n=excluded_custom))
     notes.append(NOTE_NOT_SAFE)
 
     version = db.execute(VERSION_SQL).scalar()
@@ -705,5 +713,6 @@ def dur_check(
         "drugs": drugs,
         "findings": findings,
         "cautions": cautions,
+        "excluded_custom_count": excluded_custom,
         "notes": notes,
     }

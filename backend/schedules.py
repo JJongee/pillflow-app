@@ -53,6 +53,8 @@ class ScheduleOut(BaseModel):
 
 
 def item_name_of(ud: UserDrug):
+    if ud.item_seq is None:  # 직접 추가 항목은 적은 이름 그대로
+        return ud.custom_name
     return (drug_lookup().get(ud.item_seq) or {}).get("item_name")
 
 

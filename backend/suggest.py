@@ -116,6 +116,7 @@ class SuggestResult(BaseModel):
     base_times: dict[str, str]
     age_known: bool  # 나이를 알면 나이별 용법에 맞춰 확인을 요청한다
     dur_findings: list[dict]
+    excluded_custom_count: int  # 직접 추가 항목은 용법 문장이 없어 제안에서 뺀 개수
     notes: list[str]
 
 
@@ -321,7 +322,10 @@ def suggest_schedules(
     if body is not None and body.user_drug_ids is not None:
         # 남의 약 번호가 섞여 있어도 내 것만 남는다 (존재 자체를 알리지 않음)
         stmt = stmt.where(UserDrug.id.in_(body.user_drug_ids))
-    my_drugs = list(db.scalars(stmt))
+    all_drugs = list(db.scalars(stmt))
+    # 직접 추가 항목(item_seq 없음)은 용법 문장이 없어 제안할 수 없다
+    my_drugs = [ud for ud in all_drugs if ud.item_seq is not None]
+    excluded_custom = len(all_drugs) - len(my_drugs)
 
     # 이미 저장된 시간표 (약 번호, 시각) → 시간표 번호
     saved_map = {
@@ -356,10 +360,13 @@ def suggest_schedules(
     notes = [NOTE_SUGGEST_ONLY, NOTE_NO_DOSE]
     if dur_findings:
         notes.append("병용금기가 있는 약이 있어요. 시간을 나눠도 해결되지 않으니 의사·약사와 상담하세요.")
+    if excluded_custom:
+        notes.append(f"직접 추가한 항목 {excluded_custom}개는 용법 정보가 없어 제안하지 않아요. 시간표는 직접 넣어 주세요.")
     return {
         "suggestions": suggestions,
         "base_times": base_times,
         "age_known": age_range is not None,
         "dur_findings": dur_findings,
+        "excluded_custom_count": excluded_custom,
         "notes": notes,
     }

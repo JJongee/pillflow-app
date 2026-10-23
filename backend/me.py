@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -21,24 +21,47 @@ Subject = Literal["SELF", "OTHER", "UNKNOWN"]
 Sex = Literal["FEMALE", "MALE", "UNKNOWN"]
 
 
+# 직접 추가 항목의 종류 (고연수 10/23). 영양제·건강보조식품은 SUPPLEMENT.
+Kind = Literal["SUPPLEMENT", "MEDICINE", "OTHER"]
+
+
 class UserDrugCreate(BaseModel):
-    item_seq: str = Field(min_length=1, max_length=30)
+    """item_seq(약 목록의 약) 또는 custom_name(직접 추가) 중 하나만 보낸다."""
+
+    item_seq: str | None = Field(default=None, min_length=1, max_length=30)
+    custom_name: str | None = Field(default=None, min_length=1, max_length=100)
+    kind: Kind | None = None  # 직접 추가일 때만. 안 보내면 OTHER
     memo: str | None = Field(default=None, max_length=200)
     # 복용 시작일·종료일. 투여기간주의를 보려면 시작일이 있어야 한다.
     started_on: dt.date | None = None
     ended_on: dt.date | None = None
+
+    @field_validator("custom_name")
+    @classmethod
+    def strip_name(cls, value):
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("이름을 입력해 주세요.")
+        return value
 
 
 class UserDrugUpdate(BaseModel):
     memo: str | None = Field(default=None, max_length=200)
     started_on: dt.date | None = None
     ended_on: dt.date | None = None
+    # 직접 추가 항목만 바꿀 수 있다 (약 목록의 약은 422)
+    custom_name: str | None = Field(default=None, min_length=1, max_length=100)
+    kind: Kind | None = None
 
 
 class UserDrugOut(BaseModel):
     id: int
-    item_seq: str
-    item_name: str | None
+    item_seq: str | None  # 직접 추가 항목은 null
+    is_custom: bool
+    custom_name: str | None
+    kind: str | None
+    item_name: str | None  # 직접 추가 항목은 custom_name이 들어간다
     entp_name: str | None
     image_url: str | None
     memo: str | None
@@ -54,12 +77,19 @@ def drug_lookup():
     return DRUG_BY_SEQ
 
 
+def is_custom(ud: UserDrug) -> bool:
+    return ud.item_seq is None
+
+
 def to_out(ud: UserDrug):
-    d = drug_lookup().get(ud.item_seq) or {}
+    d = (drug_lookup().get(ud.item_seq) or {}) if ud.item_seq else {}
     return {
         "id": ud.id,
         "item_seq": ud.item_seq,
-        "item_name": d.get("item_name"),
+        "is_custom": is_custom(ud),
+        "custom_name": ud.custom_name,
+        "kind": ud.kind,
+        "item_name": ud.custom_name if is_custom(ud) else d.get("item_name"),
         "entp_name": d.get("entp_name"),
         "image_url": d.get("image_url"),
         "memo": ud.memo,
@@ -89,6 +119,25 @@ def add_my_drug(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if (body.item_seq is None) == (body.custom_name is None):
+        raise HTTPException(status_code=422, detail="item_seq(약 목록의 약) 또는 custom_name(직접 추가) 중 하나만 보내 주세요.")
+    if body.started_on and body.ended_on and body.ended_on < body.started_on:
+        raise HTTPException(status_code=422, detail="복용 종료일이 시작일보다 빠를 수 없어요.")
+    if body.custom_name is not None:
+        # 직접 추가: 같은 이름(대소문자·공백 무시)이 이미 있으면 409
+        exists = db.scalar(
+            select(UserDrug).where(UserDrug.user_id == user.id, UserDrug.item_seq.is_(None),
+                                   func.lower(UserDrug.custom_name) == body.custom_name.lower())
+        )
+        if exists:
+            raise HTTPException(status_code=409, detail="이미 같은 이름으로 추가한 항목이 있어요.")
+        ud = UserDrug(user_id=user.id, item_seq=None, custom_name=body.custom_name,
+                      kind=body.kind or "OTHER", memo=body.memo,
+                      started_on=body.started_on, ended_on=body.ended_on)
+        db.add(ud)
+        db.commit()
+        db.refresh(ud)
+        return to_out(ud)
     if body.item_seq not in drug_lookup():
         raise HTTPException(status_code=404, detail="약을 찾을 수 없어요.")
     exists = db.scalar(
@@ -112,7 +161,16 @@ def update_my_drug(
     db: Session = Depends(get_db),
 ):
     ud = get_own_drug(db, user, drug_id)
-    for key, value in body.model_dump(exclude_unset=True).items():
+    sent = body.model_dump(exclude_unset=True)
+    if ("custom_name" in sent or "kind" in sent) and not is_custom(ud):
+        raise HTTPException(status_code=422, detail="약 목록에서 고른 약은 이름과 종류를 바꿀 수 없어요.")
+    if is_custom(ud) and (sent.get("custom_name", "x") is None or sent.get("kind", "x") is None):
+        raise HTTPException(status_code=422, detail="직접 추가한 항목의 이름과 종류는 비울 수 없어요.")
+    if "custom_name" in sent:
+        sent["custom_name"] = sent["custom_name"].strip()
+        if not sent["custom_name"]:
+            raise HTTPException(status_code=422, detail="이름을 입력해 주세요.")
+    for key, value in sent.items():
         setattr(ud, key, value)  # 보낸 칸만 바뀌고, null로 지울 수 있다
     if ud.started_on and ud.ended_on and ud.ended_on < ud.started_on:
         raise HTTPException(status_code=422, detail="복용 종료일이 시작일보다 빠를 수 없어요.")

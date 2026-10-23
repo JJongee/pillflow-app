@@ -1,9 +1,10 @@
-# 필플로우 API 요청·응답 (v0.3.1)
+# 필플로우 API 요청·응답 (v0.3.2)
 
 > v0.2 작성: 고연수(앱) · v0.3 정리: 주연우(서버) · 2026-10-11
 > v0.3은 **지금 돌아가는 서버의 실제 동작**입니다. 10/11 고연수 합의로 `backend/API_CHANGES.md` 내용을 여기에 반영했습니다.
 > 앱의 `lib/data/api_repository.dart`와 서버 `backend/`가 이 문서를 따릅니다. 바뀌면 셋 다 고칩니다.
-> 서버 점검은 `backend/check_api.py` 167개로 확인합니다.
+> 서버 점검은 `backend/check_api.py` 187개로 확인합니다.
+> v0.3.2 (10/23): 2-1 직접 추가 항목(영양제 등) — `POST /me/drugs`에 `custom_name`·`kind`, `UserDrug`에 `is_custom`, DUR·제안 응답에 `excluded_custom_count`.
 > v0.3.1 (10/22): 4-1 기간 복용 요약 `GET /me/intakes/summary` 추가 (달력·'이번 주 복용' 줄). 나머지는 v0.3과 같습니다.
 
 ## 공통 규칙
@@ -85,15 +86,28 @@
 
 ```json
 // UserDrug
-{ "id": 12, "item_seq": "200008591", "item_name": "...", "entp_name": "...",
+{ "id": 12, "item_seq": "200008591", "is_custom": false, "custom_name": null, "kind": null,
+  "item_name": "...", "entp_name": "...",
   "image_url": null, "memo": "아침에", "created_at": "2026-10-05",
   "started_on": "2026-10-01", "ended_on": null }
 ```
 - 같은 약 중복 등록 시 `409 DUPLICATE`, 없는 약은 `404`.
+- `is_custom`·`custom_name`·`kind`는 10/23 추가(아래 2-1). 약 목록에서 고른 약은 `false`·`null`·`null`.
 - `started_on`·`ended_on`은 복용 시작일·종료일(10/11 추가). `YYYY-MM-DD` 또는 `null`, 둘 다 선택 입력.
   투여기간주의 판정에 씁니다. `ended_on`이 `started_on`보다 빠르면 422.
 
-## 3. 복용 시간표 (사용자 지정)
+### 2-1. 직접 추가 항목 (영양제·건강보조식품 등, 10/23 추가)
+약 목록에 없는 것을 **이름만 적어서** 시간표·복용 기록·달력에 넣는 용도입니다. **DUR 판정·자동 시간표 제안에서는 빠집니다** (자료가 없어 판정할 수 없음).
+
+`POST /me/drugs` 바디: `{ "custom_name": "오메가3", "kind": "SUPPLEMENT", "memo": "아침" }` → 201 `UserDrug`
+- `item_seq`와 `custom_name` 중 **하나만** 보냅니다. 둘 다 있거나 둘 다 없으면 422.
+- `kind`: `SUPPLEMENT`(영양제·건강보조식품) · `MEDICINE`(목록에 없는 약) · `OTHER`. 안 보내면 `OTHER`.
+- 응답은 `is_custom: true`, `item_seq: null`, `item_name`에 `custom_name`이 그대로 들어갑니다 → 시간표·기록·달력 화면은 고칠 것 없음.
+- 같은 이름(대소문자 무시)을 다시 추가하면 `409 DUPLICATE`.
+- `PATCH /me/drugs/{id}`로 `custom_name`·`kind`를 바꿀 수 있습니다(직접 추가 항목만, 약 목록의 약에 보내면 422). `null`로 비우기는 422.
+- `POST /dur/check`(내 약 전체)와 `POST /me/schedules/suggest`는 직접 추가 항목을 빼고 돌려주며, 뺀 개수를 **`excluded_custom_count`**로 줍니다. 0이 아니면 결과 아래에 "직접 추가한 항목 N개는 확인 대상이 아니에요" 한 줄을 넣어 주세요 (`notes`에도 같은 문장이 들어갑니다).
+- 사진은 서버에 올리지 않습니다 (앱 안에만 저장).
+
 
 ### `GET /me/schedules`
 ```json
@@ -195,6 +209,7 @@
       "condition_note": null, "notice_no": null, "notice_date": "2015-11-30" }
   ],
   "cautions": [],
+  "excluded_custom_count": 0,
   "notes": ["..."]
 }
 ```
@@ -307,7 +322,7 @@
                 {"time": "18:30", "meal_relation": "NONE"}],
       "basis": "만 12세 이상 소아 및 성인은 1회 1~2정씩, 1일 3~4회(4~6시간 마다) 필요시 복용합니다.",
       "warnings": ["횟수가 범위로 적혀 있어 작은 값(3회)으로 제안했어요. 확인해 주세요."] }],
-  "base_times": {...}, "age_known": true, "dur_findings": [], "notes": ["..."] }
+  "base_times": {...}, "age_known": true, "dur_findings": [], "excluded_custom_count": 0, "notes": ["..."] }
 ```
 
 | 칸 | 값 |

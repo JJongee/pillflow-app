@@ -31,7 +31,11 @@ class UserDrug(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    item_seq: Mapped[str] = mapped_column(String(30))
+    # 직접 추가한 항목(영양제 등)은 item_seq가 없고 custom_name·kind만 있다 (고연수 10/23).
+    # DUR 판정·자동 제안에서는 빠지고, 시간표·복용 기록·달력에만 쓴다.
+    item_seq: Mapped[str | None] = mapped_column(String(30), default=None)
+    custom_name: Mapped[str | None] = mapped_column(String(100), default=None)
+    kind: Mapped[str | None] = mapped_column(String(12), default=None)  # SUPPLEMENT / MEDICINE / OTHER
     memo: Mapped[str | None] = mapped_column(String(200), default=None)
     # 복용 시작일·종료일. 투여기간주의를 보려면 시작일이 있어야 한다. 둘 다 선택 입력.
     started_on: Mapped[dt.date | None] = mapped_column(Date, default=None)

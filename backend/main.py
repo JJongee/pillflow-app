@@ -68,6 +68,10 @@ with engine.begin() as _conn:
     _conn.execute(text("ALTER TABLE user_drugs ADD COLUMN IF NOT EXISTS ended_on DATE"))
     # 예전 시간표는 만든 시각을 모르므로 이 칸을 더한 시점(지금)으로 채워진다
     _conn.execute(text("ALTER TABLE schedules ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT now()"))
+    # 직접 추가 항목(10/23): item_seq 없이 이름만으로 등록한다
+    _conn.execute(text("ALTER TABLE user_drugs ALTER COLUMN item_seq DROP NOT NULL"))
+    _conn.execute(text("ALTER TABLE user_drugs ADD COLUMN IF NOT EXISTS custom_name VARCHAR(100)"))
+    _conn.execute(text("ALTER TABLE user_drugs ADD COLUMN IF NOT EXISTS kind VARCHAR(12)"))
 with SessionLocal() as _db:
     create_user(_db, "demo@pillflow.app", "1234")
 
