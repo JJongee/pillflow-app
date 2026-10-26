@@ -138,3 +138,43 @@ class DrugNameText extends StatelessWidget {
     ]);
   }
 }
+
+/// '처방 필요' / '처방 없이 구매 가능' 표시 (서버 rx_required). 모르면(null) 아무것도 안 그림
+/// 빨강은 금기에만 쓰므로 처방 필요는 주황 계열
+class RxChip extends StatelessWidget {
+  const RxChip({super.key, required this.rxRequired});
+  final bool? rxRequired;
+
+  @override
+  Widget build(BuildContext context) {
+    final rx = rxRequired;
+    if (rx == null) return const SizedBox.shrink();
+    final (label, fg, bg) = rx
+        ? ('처방 필요', const Color(0xFFB45309), const Color(0xFFFFF4E5))
+        : ('처방 없이 구매 가능', Toss.grey700, Toss.grey100);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Text(label, softWrap: false, style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
+    );
+  }
+}
+
+/// 회사 이름 + 처방 표시 한 줄 (자리가 모자라면 아랫줄로)
+class DrugMetaLine extends StatelessWidget {
+  const DrugMetaLine({super.key, this.text, this.rxRequired, this.style});
+  final String? text;
+  final bool? rxRequired;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          if (text != null && text!.isNotEmpty) Text(text!, style: style),
+          RxChip(rxRequired: rxRequired),
+        ],
+      );
+}

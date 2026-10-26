@@ -149,7 +149,7 @@ class MyDrugsScreen extends ConsumerWidget {
     return ListTile(
       leading: d.isCustom ? CustomDrugThumb(path: photo, kind: d.kind) : DrugImage(url: d.imageUrl),
       title: DrugNameText(d.itemName, trailing: d.isCustom ? const CustomBadge() : null),
-      subtitle: sub.isEmpty ? null : Text(sub),
+      subtitle: sub.isEmpty && d.rxRequired == null ? null : DrugMetaLine(text: sub, rxRequired: d.rxRequired),
       // 직접 추가 항목은 공공데이터 상세가 없으니 수정 화면으로
       onTap: d.isCustom
           ? () => _editCustom(context, ref, d)

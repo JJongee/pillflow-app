@@ -7,6 +7,19 @@ String? _str(dynamic v) {
   return s.isEmpty ? null : s;
 }
 
+/// 처방 필요 여부 (api_contract 1절, 연우 10/26)
+/// 서버 rx_required: 전문의약품 true / 일반의약품 false / 모르면 null.
+/// rx_required가 없고 etc_otc만 오면 그걸로 판단. 모르면 null → 화면에 표시 안 함
+bool? rxRequiredFrom(Map<String, dynamic> j) {
+  final rx = j['rx_required'];
+  if (rx is bool) return rx;
+  return switch (_str(j['etc_otc'])) {
+    '전문의약품' => true,
+    '일반의약품' => false,
+    _ => null,
+  };
+}
+
 /// 검색 결과 한 줄
 class DrugSummary {
   final String itemSeq;
@@ -15,12 +28,20 @@ class DrugSummary {
   final String? imageUrl;
   final String? source;
 
+  /// '일반의약품' / '전문의약품' / null
+  final String? etcOtc;
+
+  /// true: 처방 필요 / false: 처방 없이 구매 가능 / null: 모름(표시 안 함)
+  final bool? rxRequired;
+
   const DrugSummary({
     required this.itemSeq,
     required this.itemName,
     this.entpName,
     this.imageUrl,
     this.source,
+    this.etcOtc,
+    this.rxRequired,
   });
 
   factory DrugSummary.fromJson(Map<String, dynamic> j) => DrugSummary(
@@ -29,6 +50,8 @@ class DrugSummary {
         entpName: _str(j['entp_name']),
         imageUrl: _str(j['image_url']),
         source: _str(j['source']),
+        etcOtc: _str(j['etc_otc']),
+        rxRequired: rxRequiredFrom(j),
       );
 }
 
@@ -50,6 +73,8 @@ class DrugDetail extends DrugSummary {
     super.entpName,
     super.imageUrl,
     super.source,
+    super.etcOtc,
+    super.rxRequired,
     this.efficacy,
     this.useMethod,
     this.warning,
@@ -67,6 +92,8 @@ class DrugDetail extends DrugSummary {
         entpName: _str(j['entp_name']),
         imageUrl: _str(j['image_url']),
         source: _str(j['source']),
+        etcOtc: _str(j['etc_otc']),
+        rxRequired: rxRequiredFrom(j),
         efficacy: _str(j['efficacy']),
         useMethod: _str(j['use_method']),
         warning: _str(j['warning']),
@@ -113,6 +140,10 @@ class UserDrug {
   final bool isCustom;
   final CustomKind? kind;
 
+  /// 처방 필요 여부 (직접 추가 항목은 항상 null)
+  final String? etcOtc;
+  final bool? rxRequired;
+
   const UserDrug({
     required this.id,
     required this.itemSeq,
@@ -125,6 +156,8 @@ class UserDrug {
     this.endedOn,
     this.isCustom = false,
     this.kind,
+    this.etcOtc,
+    this.rxRequired,
   });
 
   UserDrug copyWith({
@@ -142,6 +175,8 @@ class UserDrug {
         itemName: itemName ?? this.itemName,
         isCustom: isCustom,
         kind: kind ?? this.kind,
+        etcOtc: etcOtc,
+        rxRequired: rxRequired,
         entpName: entpName,
         imageUrl: imageUrl,
         memo: clearMemo ? memo : (memo ?? this.memo),
@@ -165,6 +200,8 @@ class UserDrug {
         itemName: (_str(j['item_name']) ?? _str(j['custom_name']) ?? ''),
         isCustom: custom,
         kind: custom ? CustomKind.fromCode(_str(j['kind'])) : null,
+        etcOtc: custom ? null : _str(j['etc_otc']),
+        rxRequired: custom ? null : rxRequiredFrom(j),
         entpName: _str(j['entp_name']),
         imageUrl: _str(j['image_url']),
         memo: _str(j['memo']),

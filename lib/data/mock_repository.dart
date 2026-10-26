@@ -145,6 +145,8 @@ class MockRepository implements PillRepository {
       imageUrl: j['image_url'] as String?,
       memo: memo,
       createdAt: _today(),
+      etcOtc: j['etc_otc'] as String?,
+      rxRequired: rxRequiredFrom(j),
     );
     _myDrugs.add(d);
     return d;

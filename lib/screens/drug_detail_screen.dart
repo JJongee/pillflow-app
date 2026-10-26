@@ -49,9 +49,22 @@ class _DrugDetailScreenState extends ConsumerState<DrugDetailScreen> {
                 Text(d.itemName, style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 4),
                 Text(d.entpName ?? '', style: Theme.of(context).textTheme.bodyMedium),
+                if (d.rxRequired != null) ...[
+                  const SizedBox(height: 6),
+                  RxChip(rxRequired: d.rxRequired),
+                ],
               ]),
             ),
           ]),
+          // 처방이 필요한 약이면 한 줄 안내 (DUR 판정과는 별개)
+          if (d.rxRequired == true)
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFFFF4E5), borderRadius: BorderRadius.circular(12)),
+              child: const Text('의사의 처방이 있어야 살 수 있는 약이에요.',
+                  style: TextStyle(fontSize: 14, color: Color(0xFFB45309), fontWeight: FontWeight.w600)),
+            ),
           const SizedBox(height: 16),
           InfoSection(title: '어디에 쓰나요', body: d.efficacy, initiallyExpanded: true),
           InfoSection(title: '어떻게 먹나요', body: d.useMethod),

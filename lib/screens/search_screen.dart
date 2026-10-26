@@ -245,7 +245,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         return ListTile(
           leading: DrugImage(url: d.imageUrl),
           title: Text(d.itemName),
-          subtitle: Text(d.entpName ?? ''),
+          subtitle: DrugMetaLine(text: d.entpName, rxRequired: d.rxRequired),
           trailing: mine.contains(d.itemSeq)
               ? const Chip(
                   label: Text('등록됨', style: TextStyle(fontSize: 13)),
