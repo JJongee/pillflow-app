@@ -78,4 +78,8 @@ with SessionLocal() as _db:
 
 @app.get("/")
 def hello():
-    return {"message": "pillflow server"}
+    """서버 확인용. 약 목록을 언제 몇 건 읽었는지, 일반/전문 칸이 있었는지도 같이 보여 준다 (고연수 10/26).
+    약 목록은 서버가 켜질 때 한 번만 읽으므로, DB를 바꿨으면 서버를 다시 켜야 한다."""
+    from drugs import LOAD_INFO
+
+    return {"message": "pillflow server", **LOAD_INFO}

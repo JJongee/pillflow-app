@@ -1,6 +1,7 @@
 """약 검색·상세 API. 김서현 DB의 drugs, drug_images 표에서 읽는다. (CSV는 더 이상 필요 없음)"""
 
 import datetime as dt
+import logging
 import re
 
 from fastapi import APIRouter, HTTPException, Query
@@ -9,6 +10,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
 from db import engine
+
+logger = logging.getLogger("uvicorn.error")  # uvicorn 콘솔에 같이 찍힌다
+LOAD_INFO = {}  # 서버가 켜질 때 읽은 약 목록 정보. GET / 에서 보여 준다
 
 # 일반/전문 구분 칸(drugs.etc_otc)은 10/23 김서현 덤프부터 있다. 예전 덤프면 NULL로 채운다.
 ETC_OTC_SQL = text(
@@ -107,6 +111,17 @@ def load_drugs():
         ) from exc
     if not rows:
         raise RuntimeError("drugs 표가 비어 있어요. 김서현 님 백업(.dump)을 복원했는지 확인하세요.")
+    # 약 목록은 서버가 켜질 때 한 번만 읽는다. DB를 바꿨으면 서버를 다시 켜야 한다. (고연수 10/26)
+    LOAD_INFO.update({
+        "drug_count": len(rows),
+        "etc_otc_column": has_etc_otc,
+        "loaded_at": dt.datetime.now().isoformat(timespec="seconds"),
+    })
+    if has_etc_otc:
+        logger.info("약 %d건 읽음. 일반/전문 구분(etc_otc) 칸 있음.", len(rows))
+    else:
+        logger.warning("약 %d건 읽음. drugs.etc_otc 칸이 없어 일반/전문 구분(rx_required)은 모두 null로 나가요. "
+                       "칸을 넣었다면 서버를 다시 켜세요.", len(rows))
     return [row_to_drug(r) for r in rows]
 
 

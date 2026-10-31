@@ -47,6 +47,7 @@ python -m uvicorn main:app --reload
 - 첫 실행 때 서버용 표(users, user_drugs, schedules, intake_logs)가 자동으로 만들어지고(이미 있으면 빠진 칸만 더해지고) 데모 계정 `demo@pillflow.app` / `1234`가 생깁니다. 김서현 표는 건드리지 않습니다.
 - 앱(에뮬레이터)은 `flutter run --dart-define=USE_MOCK=false`로 이 서버에 붙습니다.
 - `drugs 표를 찾을 수 없어요` 오류가 나면 DB 복원이 안 됐거나 `.env`의 DB 이름이 다른 것입니다.
+- 약 목록은 **켤 때 한 번만** 읽습니다. DB를 새로 복원했거나 `drugs`에 칸(예: `etc_otc`)을 넣었으면 서버를 **다시 켜야** 반영됩니다. http://127.0.0.1:8000/ 에서 `drug_count`·`etc_otc_column`·`loaded_at`으로 확인할 수 있고, 칸이 없으면 켤 때 콘솔에 경고가 나옵니다.
 
 ## API (api_contract v0.3)
 - 인증: `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`

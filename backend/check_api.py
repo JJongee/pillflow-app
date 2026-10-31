@@ -78,6 +78,7 @@ if s == 0:
     print("        서버를 켰는지, 서버 창이 '선택' 상태로 멈춰 있지 않은지(창에서 Esc) 확인하세요.")
     sys.exit(1)
 check("GET / 응답", s == 200, s)
+check("GET / 에 약 건수·etc_otc 칸 여부·읽은 시각이 있다 (4741건, 칸 있음)", lambda: b.get("drug_count") == 4741 and b.get("etc_otc_column") is True and b.get("loaded_at"), (b.get("drug_count"), b.get("etc_otc_column")) if isinstance(b, dict) else b)
 
 # ---------- 1. 약 검색·상세 ----------
 print("[1] 약 검색·상세")

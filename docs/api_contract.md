@@ -3,7 +3,7 @@
 > v0.2 작성: 고연수(앱) · v0.3 정리: 주연우(서버) · 2026-10-11
 > v0.3은 **지금 돌아가는 서버의 실제 동작**입니다. 10/11 고연수 합의로 `backend/API_CHANGES.md` 내용을 여기에 반영했습니다.
 > 앱의 `lib/data/api_repository.dart`와 서버 `backend/`가 이 문서를 따릅니다. 바뀌면 셋 다 고칩니다.
-> 서버 점검은 `backend/check_api.py` 194개로 확인합니다.
+> 서버 점검은 `backend/check_api.py` 195개로 확인합니다.
 > v0.3.3 (10/23): 약 검색·상세·내 약에 `etc_otc`(일반/전문)·`rx_required`(처방 필요) 추가.
 > v0.3.2 (10/23): 2-1 직접 추가 항목(영양제 등) — `POST /me/drugs`에 `custom_name`·`kind`, `UserDrug`에 `is_custom`, DUR·제안 응답에 `excluded_custom_count`.
 > v0.3.1 (10/22): 4-1 기간 복용 요약 `GET /me/intakes/summary` 추가 (달력·'이번 주 복용' 줄). 나머지는 v0.3과 같습니다.
@@ -32,6 +32,13 @@
 
 - **422일 때만 `detail`이 문자열이 아니라 목록**입니다(FastAPI 기본, 어느 칸이 틀렸는지 `loc`·`msg`).
   앱은 `code == "VALIDATION_ERROR"`면 "입력값을 확인해 주세요."로 보여 주면 됩니다.
+
+## 0-0. `GET /` (서버 확인용)
+```json
+{ "message": "pillflow server", "drug_count": 4741, "etc_otc_column": true, "loaded_at": "2026-10-30T10:27:29" }
+```
+- 약 목록은 **서버가 켜질 때 한 번만** DB에서 읽어 메모리에 둡니다(검색이 이걸로 돌아감). DB를 바꾸거나 칸을 넣었으면 **서버를 다시 켜야** 반영됩니다 (10/26 고연수).
+- `etc_otc_column`이 `false`면 그 DB에 일반/전문 칸이 없어 `rx_required`가 전부 `null`로 나갑니다. 서버 콘솔에도 경고가 찍힙니다.
 
 ## 0. 인증
 
