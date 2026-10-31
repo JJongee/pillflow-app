@@ -96,7 +96,19 @@ def row_to_drug(row):
         "update_date": norm_date(row["update_de"]),
     }
     drug["_key"] = squash(drug["item_name"] or "")
+    drug["_efcy_key"] = squash(efficacy_body(drug["efficacy"]))
     return drug
+
+
+# e약은요 효능 문장은 거의 다 "이 약은 …에 사용합니다." 꼴이라, 앞뒤 틀은 효능 검색에서 뺀다.
+EFCY_HEAD = re.compile(r"^\s*이\s*약은\s*")
+EFCY_TAIL = re.compile(r"\s*사용합니다\.?\s*$")
+
+
+def efficacy_body(value):
+    if not value:
+        return ""
+    return EFCY_TAIL.sub("", EFCY_HEAD.sub("", value))
 
 
 def load_drugs():
@@ -165,6 +177,45 @@ class DrugDetail(BaseModel):
     source: str = "e약은요"
 
 
+class EfficacyDrug(DrugSummary):
+    efficacy: str | None  # e약은요 효능 원문 그대로
+    matched: str | None  # 원문에서 검색어와 맞은 부분 (띄어쓰기 원문대로). 앱이 강조 표시에 쓴다
+
+
+class EfficacyCounts(BaseModel):
+    otc: int  # 일반의약품
+    rx: int  # 전문의약품
+    unknown: int  # 구분 없음
+
+
+class EfficacyList(BaseModel):
+    items: list[EfficacyDrug]
+    page: int
+    size: int
+    total: int
+    counts: EfficacyCounts  # 페이지와 상관없이 맞은 약 전체의 일반/전문 개수
+
+
+def matched_text(efficacy, key):
+    """띄어쓰기를 무시하고 맞은 부분을 원문 그대로 꺼낸다. (검색은 squash로 비교하므로)"""
+    pattern = r"\s*".join(re.escape(ch) for ch in key)
+    m = re.search(pattern, efficacy_body(efficacy), re.IGNORECASE)
+    return m.group(0) if m else None
+
+
+def search_efficacy(q, page, size):
+    """효능 문장에 검색어가 들어간 약. 추천·순위가 아니므로 이름 가나다순으로만 늘어놓는다. (교수님 10/21 피드백 ③)"""
+    key = squash(q)
+    hits = [d for d in DRUGS if key and key in d["_efcy_key"]]
+    hits.sort(key=lambda d: (d["_key"], d["item_seq"]))
+    counts = {"otc": 0, "rx": 0, "unknown": 0}
+    for d in hits:
+        counts["unknown" if d["rx_required"] is None else "rx" if d["rx_required"] else "otc"] += 1
+    start = (page - 1) * size
+    items = [{**d, "matched": matched_text(d["efficacy"], key)} for d in hits[start:start + size]]
+    return {"items": items, "page": page, "size": size, "total": len(hits), "counts": counts}
+
+
 def search(q, page, size):
     key = squash(q)
     if not key:
@@ -186,6 +237,16 @@ def search_drugs(
     size: int = Query(20, ge=1, le=100),
 ):
     return search(q, page, size)
+
+
+# /drugs/{item_seq}보다 먼저 둬야 'by-efficacy'가 약 번호로 잡히지 않는다.
+@router.get("/drugs/by-efficacy", response_model=EfficacyList)
+def search_drugs_by_efficacy(
+    q: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+):
+    return search_efficacy(q, page, size)
 
 
 @router.get("/drugs/{item_seq}", response_model=DrugDetail)

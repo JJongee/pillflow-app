@@ -101,6 +101,30 @@ check("검색 목록에도 etc_otc·rx_required가 있고 서로 어긋나지 �
 s, b = call("GET", "/drugs/0000")
 check("없는 약 → 404 NOT_FOUND", lambda: s == 404 and code_of(b) == "NOT_FOUND", (s, code_of(b)))
 
+# ---------- 1-1. 효능으로 찾기 (증상 검색, 교수님 10/21 피드백 ③) ----------
+print("[1-1] 효능으로 찾기")
+_sq = lambda v: "".join((v or "").split()).lower()
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "두통"})
+check("효능 '두통' 729건", lambda: s == 200 and b["total"] == 729, (s, b.get("total") if isinstance(b, dict) else b))
+check("결과마다 효능 원문에 '두통'이 있고 matched='두통'", lambda: b["items"] and all("두통" in _sq(x["efficacy"]) and x["matched"] == "두통" for x in b["items"]), s)
+check("이름 가나다순 (추천 순위 아님)", lambda: [_sq(x["item_name"]) for x in b["items"]] == sorted(_sq(x["item_name"]) for x in b["items"]), [x["item_name"] for x in b["items"][:3]] if isinstance(b, dict) else b)
+check("counts 합이 total과 같음", lambda: sum(b["counts"].values()) == b["total"], b.get("counts") if isinstance(b, dict) else b)
+first_page = [x["item_seq"] for x in b["items"]] if isinstance(b, dict) else []
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "두통", "page": 2})
+check("2쪽은 1쪽과 겹치지 않음", lambda: s == 200 and b["items"] and not set(first_page) & {x["item_seq"] for x in b["items"]}, s)
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "소화 불량", "size": 3})
+check("띄어쓰기 무시 ('소화 불량' = '소화불량' 229건), matched는 원문 '소화불량'", lambda: s == 200 and b["total"] == 229 and len(b["items"]) == 3 and b["items"][0]["matched"] == "소화불량", (s, b.get("total") if isinstance(b, dict) else b))
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "녹내장"})
+check("'녹내장' → 전문의약품 2건뿐 (counts.rx=2, otc=0, 앱이 진료 안내를 띄우는 경우)", lambda: s == 200 and b["counts"] == {"otc": 0, "rx": 2, "unknown": 0} and all(x["rx_required"] is True for x in b["items"]), (s, b.get("counts") if isinstance(b, dict) else b))
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "이 약은"})
+check("효능 문장 틀('이 약은 …에 사용합니다')로는 거의 안 걸림", lambda: s == 200 and b["total"] < 500, (s, b.get("total") if isinstance(b, dict) else b))
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "없는증상말"})
+check("맞는 약 없음 → 200, total 0, counts 모두 0", lambda: s == 200 and b["total"] == 0 and b["items"] == [] and b["counts"] == {"otc": 0, "rx": 0, "unknown": 0}, (s, b))
+s, b = call("GET", "/drugs/by-efficacy")
+check("검색어 없이 → 422 (약 번호 'by-efficacy'로 잡혀 404가 나면 안 됨)", lambda: s == 422 and code_of(b) == "VALIDATION_ERROR", (s, code_of(b)))
+s, b = call("GET", "/drugs/by-efficacy", params={"q": "두통", "size": 101})
+check("페이지 크기 101 → 422", lambda: s == 422, s)
+
 # ---------- 2. 가입·로그인 ----------
 print("[2] 가입·로그인")
 stamp = time.strftime("%m%d%H%M%S")

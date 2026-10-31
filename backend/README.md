@@ -51,7 +51,7 @@ python -m uvicorn main:app --reload
 
 ## API (api_contract v0.3)
 - 인증: `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`
-- 약: `GET /api/v1/drugs?q=`, `GET /api/v1/drugs/{item_seq}`
+- 약: `GET /api/v1/drugs?q=`, `GET /api/v1/drugs/by-efficacy?q=` (효능으로 찾기, 증상 검색), `GET /api/v1/drugs/{item_seq}`
 - 내 약: `GET·POST /api/v1/me/drugs`, `PATCH·DELETE /api/v1/me/drugs/{id}`
 - 시간표: `GET·POST /api/v1/me/schedules`, `PATCH·DELETE /api/v1/me/schedules/{id}` (1회 복용량은 `dose_amount` + `dose_unit`)
 - 복용 기록: `GET /api/v1/me/intakes?date=`, `PUT /api/v1/me/intakes`
