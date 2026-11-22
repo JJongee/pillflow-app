@@ -10,7 +10,7 @@ import '../widgets/state_views.dart';
 import '../widgets/photo_search.dart';
 import '../widgets/voice_search.dart';
 import 'drug_detail_screen.dart';
-import 'my_drugs_screen.dart';
+import 'symptom_search_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -30,10 +30,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final List<DrugSummary> _items = [];
   int _total = 0;
   int _page = 0;
-  bool _loading = false; // 첫 페이지
-  bool _loadingMore = false; // 다음 페이지
+  bool _loading = false;
+  bool _loadingMore = false;
   Object? _error;
-  int _generation = 0; // 검색어가 바뀌면 이전 응답은 버림
+  int _generation = 0;
 
   bool get _hasMore => _items.length < _total;
 
@@ -41,7 +41,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(() {
-      // 끝에서 300px 남으면 다음 페이지
       if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 300) _loadMore();
     });
   }
@@ -55,11 +54,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _onChanged(String v) {
-    setState(() {}); // 지우기 버튼 즉시 표시
+    setState(() {});
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 400), () => _search(v));
   }
 
+  /// 약 이름 검색 (첫 페이지). 증상 검색은 결과 위 버튼 → SymptomSearchScreen
   Future<void> _search(String v) async {
     final q = v.trim();
     final gen = ++_generation;
@@ -89,24 +89,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  /// 말로 찾기: 인식한 이름을 검색창에 넣고 바로 검색
-  Future<void> _voice() async {
-    final q = await showVoiceSearch(context);
-    if (!mounted || q == null || q.isEmpty) return;
-    _debounce?.cancel();
-    _controller.text = q;
-    _search(q);
-  }
-
-  /// 사진으로 찾기: 고른 후보를 검색창에 넣고 바로 검색
-  Future<void> _photo() async {
-    final q = await showPhotoSearch(context, ref);
-    if (!mounted || q == null || q.isEmpty) return;
-    _debounce?.cancel();
-    _controller.text = q;
-    _search(q);
-  }
-
+  /// 아래로 내리면 다음 페이지
   Future<void> _loadMore() async {
     if (_loading || _loadingMore || !_hasMore || _query.isEmpty) return;
     final gen = _generation;
@@ -119,17 +102,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         _total = r.total;
         _page += 1;
       });
-    } catch (e) {
-      if (mounted && gen == _generation) showSnack(context, e.toString());
+    } catch (_) {
+      // 다음 페이지 실패는 조용히 넘어감 (다시 내리면 재시도)
     } finally {
       if (mounted && gen == _generation) setState(() => _loadingMore = false);
     }
   }
 
+  Future<void> _voice() async {
+    final q = await showVoiceSearch(context);
+    if (!mounted || q == null || q.isEmpty) return;
+    _debounce?.cancel();
+    _controller.text = q;
+    _search(q);
+  }
+
+  Future<void> _photo() async {
+    final q = await showPhotoSearch(context, ref);
+    if (!mounted || q == null || q.isEmpty) return;
+    _debounce?.cancel();
+    _controller.text = q;
+    _search(q);
+  }
+
+  void _openSymptom(String q) {
+    if (q.trim().isEmpty) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => SymptomSearchScreen(symptom: q.trim())));
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 이미 등록한 약은 검색 결과에 "등록됨" 표시
-    final mine = ref.watch(myDrugsProvider).valueOrNull?.where((d) => !d.isCustom).map((d) => d.itemSeq).toSet() ?? const <String>{};
+    final mine = ref.watch(myDrugsProvider).valueOrNull?.map((d) => d.itemSeq).toSet() ?? const <String>{};
     return Scaffold(
       appBar: AppBar(title: const Text('약 찾기')),
       body: Column(children: [
@@ -145,7 +148,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             textInputAction: TextInputAction.search,
             style: const TextStyle(fontSize: 19),
             decoration: InputDecoration(
-              hintText: '약 이름 검색', // 큰 글자에서도 잘리지 않게 짧게
+              hintText: '약 이름이나 증상 (예: 타이레놀, 두통)',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (_controller.text.isNotEmpty)
@@ -181,9 +184,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (_query.isEmpty) {
       return EmptyView(
         icon: Icons.medication_liquid_outlined,
-        title: '먹고 있는 약을 검색해 보세요',
-        // 큰 글자에서도 한 단어만 떨어져 남지 않게 짧은 줄로 미리 나눔
-        message: '약 봉투나 상자에 적힌\n이름을 입력해 주세요.\n어려우면 말이나 사진으로\n찾을 수 있어요.',
+        title: '어디가 아프신가요?',
+        message: '약 이름이나 증상을 입력해 보세요.\n입력이 어려우면 말이나 사진으로 찾아도 돼요.',
         action: Column(children: [
           FilledButton.icon(
             onPressed: _voice,
@@ -195,7 +197,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           OutlinedButton.icon(
             onPressed: _photo,
             icon: const Icon(Icons.photo_camera_outlined, size: 26),
-            label: const Text('사진으로 약 찾기', style: TextStyle(fontSize: 18)),
+            label: const Text('사진으로 찾기', style: TextStyle(fontSize: 18)),
             style: OutlinedButton.styleFrom(minimumSize: const Size(230, 56)),
           ),
         ]),
@@ -207,45 +209,47 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return EmptyView(
         icon: Icons.search_off,
         title: '"$_query" 검색 결과가 없어요',
-        message: '띄어쓰기 없이, 또는 이름 앞부분만 입력해 보세요.\n영양제나 목록에 없는 약은 직접 추가할 수 있어요.',
-        // 못 찾은 이름을 그대로 넣어 직접 추가 화면으로 (복용 관리만, DUR 확인 제외)
-        action: OutlinedButton.icon(
-          onPressed: () => MyDrugsScreen.addCustom(context, ref, name: _query),
-          icon: const Icon(Icons.add),
-          label: const Text('직접 추가하기'),
+        message: '이름을 다시 확인하거나, 증상으로 찾아보세요.',
+        action: FilledButton.icon(
+          onPressed: () => _openSymptom(_query),
+          icon: const Icon(Icons.manage_search),
+          label: Text('효능/증상으로 "$_query" 약 찾기'),
         ),
       );
     }
     final t = Theme.of(context).textTheme;
-    // 0: 건수, 1..n: 결과, n+1: 하단(더 불러오는 중 / 끝)
     return ListView.separated(
       controller: _scroll,
       itemCount: _items.length + 2,
-      separatorBuilder: (_, i) => i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
+      separatorBuilder: (_, i) => i == 0 || i == _items.length ? const SizedBox.shrink() : const Divider(height: 1),
       itemBuilder: (context, i) {
         if (i == 0) {
           return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Text('$_total건', style: t.bodyMedium),
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
+            child: Row(children: [
+              Text('총 $_total건', style: t.bodyMedium),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _openSymptom(_query),
+                icon: const Icon(Icons.manage_search, size: 20),
+                label: const Text('증상(효능)으로 찾기'),
+              ),
+            ]),
           );
         }
         if (i == _items.length + 1) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(
-              child: _loadingMore
-                  ? const CircularProgressIndicator()
-                  : _hasMore
-                      ? OutlinedButton(onPressed: _loadMore, child: const Text('더 보기'))
-                      : Text('검색 결과를 모두 봤어요', style: t.bodySmall),
-            ),
-          );
+          return _loadingMore
+              ? const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
+              : const SizedBox(height: 24);
         }
         final d = _items[i - 1];
         return ListTile(
           leading: DrugImage(url: d.imageUrl),
-          title: Text(d.itemName),
-          subtitle: DrugMetaLine(text: d.entpName, rxRequired: d.rxRequired),
+          title: DrugNameText(d.itemName),
+          subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(d.entpName ?? ''),
+            if (d.rxRequired != null) Padding(padding: const EdgeInsets.only(top: 4), child: RxChip(rxRequired: d.rxRequired)),
+          ]),
           trailing: mine.contains(d.itemSeq)
               ? const Chip(
                   label: Text('등록됨', style: TextStyle(fontSize: 13)),

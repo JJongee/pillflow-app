@@ -116,6 +116,20 @@ class MockRepository implements PillRepository {
     return Paged(items: items, page: page, size: size, total: hits.length);
   }
 
+  /// 서버 by-efficacy 흉내: 효능 글에 증상이 들어간 약 (최대 50개)
+  @override
+  Future<List<DrugSummary>> searchByEfficacy(String symptom) async {
+    await _load();
+    await _delay();
+    final q = symptom.trim();
+    if (q.isEmpty) return const [];
+    return _drugs
+        .where((d) => ((d['efficacy'] as String?) ?? '').contains(q))
+        .take(50)
+        .map(DrugSummary.fromJson)
+        .toList();
+  }
+
   @override
   Future<DrugDetail> getDrug(String itemSeq) async {
     await _load();
