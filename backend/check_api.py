@@ -553,6 +553,60 @@ s, b = call("PATCH", f"/me/drugs/{dur_drug}", {"started_on": None, "ended_on": N
 check("복용 기간을 null로 지울 수 있음", lambda: s == 200 and b["started_on"] is None, (s, b))
 call("DELETE", f"/me/drugs/{dur_drug}", token=token_a)
 
+# ---------- 12-4. 노인주의 해당 여부 (11/22, 만 65세 이상) ----------
+print("[12-4] 노인주의 판정")
+def elderly_of(body):
+    return [c for c in body.get("cautions", []) if c["type"] == "ELDERLY"] if isinstance(body, dict) else []
+def years_ago(n, d=None):
+    d = d or dt.date.today()
+    try:
+        return d.replace(year=d.year - n)
+    except ValueError:  # 2월 29일
+        return d.replace(year=d.year - n, day=28)
+ELD_DRUG = "196000011"  # 페니라민정, 노인주의 기준 확인됨
+call("PUT", "/me/profile", {"birth_year": None, "birth_date": None}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+check("생년월일 없으면 노인주의 판정 UNKNOWN", lambda: s == 200 and eld and all(c["applies"] == "UNKNOWN" for c in eld), [c["applies"] for c in eld])
+check("생년월일 입력을 권하는 안내가 온다", lambda: any("생년월일을 입력하면" in n for n in b["notes"]), b.get("notes"))
+call("PUT", "/me/profile", {"birth_date": "1950-01-01"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+ok = lambda: s == 200 and eld and eld[0]["status"] == "CONFIRMED" and eld[0]["applies"] == "YES" and "65세 이상" in (eld[0]["applies_note"] or "")
+check("만 65세 이상 + 기준 확인됨 → 해당됨(YES)", ok, [(c["status"], c["applies"]) for c in eld])
+check("노인주의가 해당돼도 verdict는 그대로, findings에도 안 들어감",
+      lambda: b["drugs"][0]["verdict"] != "CONTRAINDICATED" and all(f["type"] != "ELDERLY" for f in b["findings"]), b.get("drugs"))
+call("PUT", "/me/profile", {"birth_date": "1990-05-05"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+check("만 65세 미만 → 해당 안 됨(NO)", lambda: eld and all(c["applies"] == "NO" for c in eld), [c["applies"] for c in eld])
+call("PUT", "/me/profile", {"birth_date": years_ago(65).isoformat()}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+check("오늘이 만 65세 생일 → 해당됨(YES)", lambda: eld and eld[0]["applies"] == "YES", [c["applies"] for c in eld])
+call("PUT", "/me/profile", {"birth_date": years_ago(65, dt.date.today() + dt.timedelta(days=1)).isoformat()}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+check("만 65세 생일 하루 전 → 해당 안 됨(NO)", lambda: eld and eld[0]["applies"] == "NO", [c["applies"] for c in eld])
+call("PUT", "/me/profile", {"birth_date": "1950-01-01"}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": ["198601419"]}, token_a)  # 바이겔크림, 노인주의 기준 확인 중
+eld = elderly_of(b)
+check("65세 이상이어도 기준 확인 중인 약은 확인 필요(CHECK)",
+      lambda: eld and all(c["status"] != "CONFIRMED" and c["applies"] == "CHECK" for c in eld), [(c["status"], c["applies"]) for c in eld])
+call("PUT", "/me/profile", {"birth_year": this_year - 70, "birth_date": None}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+check("태어난 해만 있어도 확실히 65세 이상이면 YES", lambda: eld and eld[0]["applies"] == "YES", [c["applies"] for c in eld])
+call("PUT", "/me/profile", {"birth_year": this_year - 65, "birth_date": None}, token_a)
+s, b = call("POST", "/dur/check", {"item_seqs": [ELD_DRUG]}, token_a)
+eld = elderly_of(b)
+_last_day = dt.date.today().month == 12 and dt.date.today().day == 31  # 12/31이면 그해 출생자는 모두 65세
+check("태어난 해만으로 65세 여부가 갈리면 확인 필요(CHECK, YES로 단정 안 함)",
+      lambda: eld and eld[0]["applies"] == ("YES" if _last_day else "CHECK"), [(c["applies"], c["applies_note"]) for c in eld])
+check("노인주의 판정 문구가 본인 기준 표현('하셨어요')을 쓰지 않는다",
+      lambda: all("하셨" not in (c["applies_note"] or "") for c in eld), [c["applies_note"] for c in eld])
+call("PUT", "/me/profile", {"birth_year": this_year - 12, "birth_date": None}, token_a)  # 앞 단계 상태로 되돌림
+
 # ---------- 13. 자동 복용 시간표 제안 ----------
 print("[13] 자동 시간표 제안")
 s, b = call("POST", "/me/schedules/suggest")

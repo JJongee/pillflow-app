@@ -168,6 +168,13 @@ NOTE_DURATION_WITHIN = "입력한 날짜 기준 경과기간은 {days}일로 기
 NOTE_DURATION_CHECK = "기간 기준이 숫자로 확정되지 않아 비교하지 못했어요. 원문을 확인해 주세요."
 NOTE_DURATION_UNKNOWN = "복용 시작일을 입력하면 기간을 비교해 드릴 수 있어요."
 NOTE_ELDERLY_PENDING = "노인주의 기준을 확인 중이에요. 고령이라면 의사·약사와 상담하세요."
+# 노인주의 해당 여부 (11/22). 공식 DUR 노인주의 대상인 만 65세 이상을 기준으로 생년월일과 비교한다.
+ELDERLY_AGE = 65
+NOTE_ELDERLY_APPLIES = "입력된 나이 정보 기준 만 65세 이상이에요. 이 약은 노인주의로 등록돼 있으니 의사·약사와 상담하세요."
+NOTE_ELDERLY_PENDING_APPLY = "입력된 나이 정보 기준 만 65세 이상인데, 이 약의 노인주의 기준은 아직 확인 중이에요. 의사·약사와 상담하세요."
+NOTE_ELDERLY_BOUNDARY = "태어난 해만 있어서 만 65세가 됐는지 알 수 없어요. 생년월일을 입력하면 확인할 수 있어요."
+NOTE_ELDERLY_NOT = "입력된 나이 정보 기준 만 65세 미만이라 해당되지 않아요. 그래도 참고로 보여 드려요."
+NOTE_ELDERLY_UNKNOWN = "생년월일을 입력하면 해당되는지 알려 드릴 수 있어요."
 NOTE_DUPLICATE = "같은 효능군의 약을 함께 사용하고 있지 않은지 의사·약사와 확인하세요."
 NOTE_DUPLICATE_PENDING = "효능군 기준을 확인 중이에요. 비슷한 약을 함께 사용하고 있다면 의사·약사와 상담하세요."
 NOTE_DURATION = "정해진 기간을 넘겨 사용하지 말고, 더 오래 사용해야 하면 의사·약사와 상담하세요."
@@ -176,7 +183,7 @@ NOTE_DURATION_CONDITIONAL = "쓰는 경우에 따라 기간이 달라요. 용법
 NOTE_PREG_PENDING = "임부금기 등급 기준을 확인 중이에요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_PREG_CONFLICT = "임부금기 기준이 서로 달라 등급을 정하지 못했어요. 임신 중이거나 가능성이 있다면 의사·약사와 상담하세요."
 NOTE_DOSE_PENDING = "1일 최대 투여량 기준을 확인 중이에요. 정해진 용량을 넘기지 말고, 궁금하면 의사·약사와 상담하세요."
-# 임부금기·투여기간은 10/11부터 applies로 판정한다. 다만 금기 판정(verdict)에는 여전히 넣지 않는다.
+# 임부금기·투여기간은 10/11부터, 노인주의는 11/22부터 applies로 판정한다. 다만 금기 판정(verdict)에는 여전히 넣지 않는다.
 NOTE_CAUTIONS = ("임부금기·용량주의·노인주의·효능군중복주의·투여기간주의·분할주의는 cautions에 참고 정보로 알려 줘요. "
                  "금기 판정(verdict)에는 넣지 않아요.")
 NOTE_DUPLICATE_SCOPE = "효능군은 약마다 따로 알려 줘요. 효능군이 같다고 바로 중복은 아니어서, 함께 사용해도 되는지는 따로 확인해야 해요."
@@ -311,7 +318,7 @@ def as_rules(value):
     return list(value or [])
 
 
-def simple_caution(kind, row, rule, order, period=None, today=None):
+def simple_caution(kind, row, rule, order, period=None, today=None, birth_year=None, birth_date=None):
     """노인주의·효능군중복주의·투여기간주의 한 건을 만든다. 세 뷰의 칸 구성이 같아서 함께 처리한다.
     김서현 명세: 주의 내용이 NULL이어도 경고를 빼거나 안전으로 표시하지 않는다.
     기준이 여러 개면 하나를 고르지 않고 각각 돌려준다."""
@@ -354,7 +361,9 @@ def simple_caution(kind, row, rule, order, period=None, today=None):
 
     if kind == "DURATION":
         applies, applies_note = judge_duration(status, [rule] if rule else [], period, today)
-    else:  # 노인주의·효능군중복주의는 판정 기준이 없어 항상 확인 필요
+    elif kind == "ELDERLY":
+        applies, applies_note = judge_elderly(status, birth_year, birth_date, today or dt.date.today())
+    else:  # 효능군중복주의는 판정 기준이 없어 항상 확인 필요
         applies, applies_note = "CHECK", None
     notice = rule.get("notification_date") or row["notification_date"]
     return (order, kind, s, ingr or "", head), {
@@ -382,6 +391,23 @@ def judge_pregnancy(status, reason, pregnancy, sex="UNKNOWN"):
     if reason and re.search(PREGNANCY_PERIOD, reason):
         return "CHECK", NOTE_PREG_PERIOD  # 임신 시기 조건이 붙어 있으면 확정하지 않는다
     return "YES", NOTE_PREG_APPLIES
+
+
+def judge_elderly(status, birth_year, birth_date, today):
+    """생년월일로 노인주의(만 65세 이상)가 해당되는지 본다. (applies, 안내)
+    태어난 해만 알면 생일에 따라 갈리는 해는 확정하지 않는다(CHECK).
+    기준이 확인 중인 약은 65세 이상이어도 YES로 단정하지 않는다(CHECK)."""
+    if birth_date is None and birth_year is None:
+        return "UNKNOWN", NOTE_ELDERLY_UNKNOWN
+    year = birth_date.year if birth_date is not None else birth_year
+    hit = age_match(year, "ge", ELDERLY_AGE, "year", today, birth_date)
+    if hit is None:
+        return "NO", NOTE_ELDERLY_NOT
+    if hit == "POSSIBLE":
+        return "CHECK", NOTE_ELDERLY_BOUNDARY
+    if status != "CONFIRMED":
+        return "CHECK", NOTE_ELDERLY_PENDING_APPLY
+    return "YES", NOTE_ELDERLY_APPLIES
 
 
 def taken_days(period, today):
@@ -449,10 +475,12 @@ def split_caution(row, order):
 
 
 def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=(), split=(),
-                   pregnancy="UNKNOWN", sex="UNKNOWN", periods=None, today=None):
+                   pregnancy="UNKNOWN", sex="UNKNOWN", periods=None, today=None,
+                   birth_year=None, birth_date=None):
     """임부금기·용량주의·노인주의·효능군중복주의·투여기간주의 참고 정보.
     판정(verdict)에는 쓰지 않고, 기준 확인 중(pending)인 기록도 빼지 않는다.
-    pregnancy(임신 여부)와 periods(약별 복용 시작일·종료일)가 있으면 applies에 판정 결과를 담는다."""
+    pregnancy(임신 여부), periods(약별 복용 시작일·종료일), birth_year·birth_date(노인주의)가 있으면
+    applies에 판정 결과를 담는다."""
     items = {}
     order = {s: i for i, s in enumerate(seqs)}
     periods = periods or {}
@@ -520,7 +548,7 @@ def build_cautions(seqs, preg=(), dose=(), elderly=(), duplicate=(), duration=()
             rules = as_rules(row["linked_rules"]) if STATUS.get(row["status"]) == "CONFIRMED" else []
             for rule in rules or [None]:
                 key, item = simple_caution(kind, row, rule, order.get(row["item_seq"], 999),
-                                           periods.get(row["item_seq"]), today)
+                                           periods.get(row["item_seq"]), today, birth_year, birth_date)
                 items.setdefault(key, item)
 
     for row in split:
@@ -672,7 +700,8 @@ def dur_check(
                                    birth_date=user.birth_date)
     cautions = build_cautions(seqs, **caution_rows,
                               pregnancy=user.pregnancy or "UNKNOWN",
-                              sex=user.sex or "UNKNOWN", periods=periods)
+                              sex=user.sex or "UNKNOWN", periods=periods,
+                              birth_year=user.birth_year, birth_date=user.birth_date)
 
     notes = []
     if age_ready:
@@ -698,6 +727,12 @@ def dur_check(
         notes.append("임신 여부를 입력하면 해당되는지까지 알려 드릴 수 있어요.")
     elif need_period:
         notes.append("복용 시작일을 입력하면 해당되는지까지 알려 드릴 수 있어요.")
+    # 노인주의: 생년월일이 없거나 태어난 해만 있어서 모르면 입력을 권한다 (같은 안내가 이미 있으면 겹치지 않게)
+    asked_birth = any("생년월일을 입력하면" in n for n in notes)
+    if not asked_birth and any(c["type"] == "ELDERLY" and c["applies"] == "UNKNOWN" for c in cautions):
+        notes.append("생년월일을 입력하면 노인주의도 해당되는지 알려 드릴 수 있어요.")
+    elif not asked_birth and any(c["type"] == "ELDERLY" and c["applies_note"] == NOTE_ELDERLY_BOUNDARY for c in cautions):
+        notes.append("태어난 해만 알고 있어요. 생년월일을 입력하면 노인주의도 정확히 판단할 수 있어요.")
     if excluded_custom:
         notes.append(NOTE_CUSTOM_EXCLUDED.format(n=excluded_custom))
     notes.append(NOTE_NOT_SAFE)
