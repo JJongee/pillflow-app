@@ -116,18 +116,39 @@ class MockRepository implements PillRepository {
     return Paged(items: items, page: page, size: size, total: hits.length);
   }
 
-  /// 서버 by-efficacy 흉내: 효능 글에 증상이 들어간 약 (최대 50개)
+  /// 서버 by-efficacy 흉내: 효능 글에 증상이 들어간 약. 추천이 아니므로 이름 가나다순, 전체 일반/전문 개수 포함
   @override
-  Future<List<DrugSummary>> searchByEfficacy(String symptom) async {
+  Future<EfficacyPage> searchByEfficacy(String symptom, {int page = 1, int size = 20}) async {
     await _load();
     await _delay();
-    final q = symptom.trim();
-    if (q.isEmpty) return const [];
-    return _drugs
-        .where((d) => ((d['efficacy'] as String?) ?? '').contains(q))
-        .take(50)
-        .map(DrugSummary.fromJson)
-        .toList();
+    final q = normalizeForSearch(symptom);
+    if (q.isEmpty) return EfficacyPage(items: const [], page: page, size: size, total: 0);
+    final hits = <int>[];
+    for (var i = 0; i < _drugs.length; i++) {
+      if (normalizeForSearch((_drugs[i]['efficacy'] as String?) ?? '').contains(q)) hits.add(i);
+    }
+    hits.sort((a, b) => _searchKeys[a].compareTo(_searchKeys[b]));
+    var otc = 0, rx = 0, unknown = 0;
+    for (final i in hits) {
+      final r = rxRequiredFrom(_drugs[i]);
+      if (r == null) {
+        unknown++;
+      } else if (r) {
+        rx++;
+      } else {
+        otc++;
+      }
+    }
+    final start = (page - 1) * size;
+    return EfficacyPage(
+      items: hits.skip(start).take(size).map((i) => DrugSummary.fromJson(_drugs[i])).toList(),
+      page: page,
+      size: size,
+      total: hits.length,
+      otcCount: otc,
+      rxCount: rx,
+      unknownCount: unknown,
+    );
   }
 
   @override

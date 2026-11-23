@@ -844,3 +844,43 @@ class Paged<T> {
   final int total;
   const Paged({required this.items, required this.page, required this.size, required this.total});
 }
+
+/// 증상(효능) 검색 결과 한 페이지 + 전체의 일반/전문 개수 (GET /drugs/by-efficacy)
+class EfficacyPage {
+  final List<DrugSummary> items;
+  final int page;
+  final int size;
+  final int total;
+
+  /// 페이지와 상관없이 맞은 약 전체의 개수
+  final int otcCount;
+  final int rxCount;
+  final int unknownCount;
+
+  const EfficacyPage({
+    required this.items,
+    required this.page,
+    required this.size,
+    required this.total,
+    this.otcCount = 0,
+    this.rxCount = 0,
+    this.unknownCount = 0,
+  });
+
+  /// 결과가 전부 전문의약품(처방 필요)인지 → 진료 안내
+  bool get onlyRx => total > 0 && rxCount > 0 && otcCount == 0 && unknownCount == 0;
+
+  factory EfficacyPage.fromJson(Map<String, dynamic> j) {
+    final c = (j['counts'] as Map?) ?? const {};
+    final items = ((j['items'] as List?) ?? const []).cast<Map<String, dynamic>>().map(DrugSummary.fromJson).toList();
+    return EfficacyPage(
+      items: items,
+      page: (j['page'] as int?) ?? 1,
+      size: (j['size'] as int?) ?? items.length,
+      total: (j['total'] as int?) ?? items.length,
+      otcCount: (c['otc'] as int?) ?? 0,
+      rxCount: (c['rx'] as int?) ?? 0,
+      unknownCount: (c['unknown'] as int?) ?? 0,
+    );
+  }
+}

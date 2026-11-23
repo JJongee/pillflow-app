@@ -11,7 +11,7 @@ abstract class PillRepository {
   Future<Paged<DrugSummary>> searchDrugs(String query, {int page = 1, int size = 20});
 
   /// 증상(효능) 검색: 설명서 효능에 [symptom]이 적힌 약
-  Future<List<DrugSummary>> searchByEfficacy(String symptom);
+  Future<EfficacyPage> searchByEfficacy(String symptom, {int page = 1, int size = 20});
   Future<DrugDetail> getDrug(String itemSeq);
 
   // 2. 내 약

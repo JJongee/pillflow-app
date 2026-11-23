@@ -100,11 +100,9 @@ class ApiRepository implements PillRepository {
       });
 
   @override
-  Future<List<DrugSummary>> searchByEfficacy(String symptom) => _call(() async {
-        final r = await _dio.get('/drugs/by-efficacy', queryParameters: {'q': symptom});
-        final d = r.data;
-        final rows = d is List ? d : ((d as Map)['items'] ?? const []) as List;
-        return rows.cast<Map<String, dynamic>>().map(DrugSummary.fromJson).toList();
+  Future<EfficacyPage> searchByEfficacy(String symptom, {int page = 1, int size = 20}) => _call(() async {
+        final r = await _dio.get('/drugs/by-efficacy', queryParameters: {'q': symptom, 'page': page, 'size': size});
+        return EfficacyPage.fromJson(r.data as Map<String, dynamic>);
       });
 
   @override
